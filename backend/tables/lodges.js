@@ -9,8 +9,6 @@ const createLodgesTable = async (pool) => {
       price NUMERIC(10, 2) NOT NULL,
       capacity INTEGER NOT NULL,
       available_rooms INTEGER NOT NULL,
-      amenities TEXT[],
-      rules TEXT[],
       verification_status BOOLEAN DEFAULT FALSE,
       display_status BOOLEAN DEFAULT TRUE,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
