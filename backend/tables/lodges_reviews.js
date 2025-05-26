@@ -1,3 +1,5 @@
+// This function creates a table for reviews made by users regarding a particular lodge.
+
 const createLodgeReviewsTable = async (pool) => {
   const query = `
     CREATE TABLE IF NOT EXISTS lodge_reviews (
@@ -14,4 +16,4 @@ const createLodgeReviewsTable = async (pool) => {
   await pool.query(query);
 };
 
-module.exports = createLodgeReviewsTable;
+export default createLodgeReviewsTable;

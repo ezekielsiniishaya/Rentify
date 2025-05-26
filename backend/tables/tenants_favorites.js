@@ -1,3 +1,5 @@
+// This function creates a tables to store tenant's favorite lodges in the database.
+
 const createTenantFavoritesTable = async (pool) => {
   const query = `
     CREATE TABLE IF NOT EXISTS tenant_favorites (
@@ -11,4 +13,4 @@ const createTenantFavoritesTable = async (pool) => {
   await pool.query(query);
 };
 
-module.exports = createTenantFavoritesTable;
+export default createTenantFavoritesTable;

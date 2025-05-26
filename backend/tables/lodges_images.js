@@ -1,5 +1,7 @@
+// This code creates a table to store images url and name associated with lodges
+
 const createLodgeImagesTable = async (pool) => {
-	const query = `
+  const query = `
     CREATE TABLE IF NOT EXISTS lodge_images (
       id SERIAL PRIMARY KEY,
       lodge_id INTEGER NOT NULL REFERENCES lodges(id) ON DELETE CASCADE,
@@ -9,7 +11,7 @@ const createLodgeImagesTable = async (pool) => {
       display_order INTEGER DEFAULT 0
     )
   `;
-	await pool.query(query);
+  await pool.query(query);
 };
 
-module.exports = createLodgeImagesTable;
+export default createLodgeImagesTable;

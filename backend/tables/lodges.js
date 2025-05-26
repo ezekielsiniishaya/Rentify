@@ -1,5 +1,7 @@
+// This function creates a table for lodges
+
 const createLodgesTable = async (pool) => {
-	const query = `
+  const query = `
     CREATE TABLE IF NOT EXISTS lodges (
       id SERIAL PRIMARY KEY,
       landlord_id INTEGER NOT NULL REFERENCES landlord(id) ON DELETE CASCADE,
@@ -15,7 +17,7 @@ const createLodgesTable = async (pool) => {
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
   `;
-	await pool.query(query);
+  await pool.query(query);
 };
 
-module.exports = createLodgesTable;
+export default createLodgesTable;

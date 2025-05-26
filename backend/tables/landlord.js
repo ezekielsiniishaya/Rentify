@@ -1,6 +1,8 @@
+// This function creates a landlord table in a PostgreSQL database using Node.js and the pg library.
+
 const createLandlordTable = async (pool) => {
-	const query = `
-    CREATE TABLE IF NOT EXISTS landlord (
+  const query = `
+    CREATE TABLE IF NOT EXISTS landlords (
       id SERIAL PRIMARY KEY,
       name VARCHAR(100) NOT NULL,
       email VARCHAR(100) UNIQUE NOT NULL,
@@ -15,8 +17,7 @@ const createLandlordTable = async (pool) => {
       language_preference VARCHAR(50)
     )
   `;
-	await pool.query(query);
+  await pool.query(query);
 };
 
-module.exports = createLandlordTable;
-
+export default createLandlordTable;

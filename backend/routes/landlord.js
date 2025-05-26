@@ -1,23 +1,25 @@
-const express = require("express");
-const bcrypt = require("bcryptjs");
-const upload = require("../middlewares/upload");
-const { pool } = require("../db");
-const { body, validationResult } = require("express-validator");
+import { Router } from "express";
+import { hash } from "bcryptjs";
+import { single } from "../middlewares/upload";
+import { pool } from "../db";
+import { body, validationResult } from "express-validator";
 
-const router = express.Router();
+const router = Router();
 
 // POST /api/landlord/register
 router.post(
   "/register",
-  upload.single("profile_picture"),
+  single("profile_picture"),
   [
     body("name").trim().notEmpty().withMessage("Name is required"),
     body("email").isEmail().withMessage("Valid email is required"),
     body("phone_number")
       .optional()
-      .isMobilePhone().withMessage("Valid phone number required"),
+      .isMobilePhone()
+      .withMessage("Valid phone number required"),
     body("password")
-      .isLength({ min: 6 }).withMessage("Password must be at least 6 characters"),
+      .isLength({ min: 6 })
+      .withMessage("Password must be at least 6 characters"),
     body("address").optional().trim(),
     body("gender").optional().isIn(["male", "female", "other"]),
     body("language_preference").optional().trim(),
@@ -40,7 +42,7 @@ router.post(
       } = req.body;
 
       // Hash password
-      const hashedPassword = await bcrypt.hash(password, 10);
+      const hashedPassword = await hash(password, 10);
 
       // Generate image URL
       const imageUrl = req.file
@@ -79,5 +81,4 @@ router.post(
   }
 );
 
-module.exports = router;
-
+export default router;

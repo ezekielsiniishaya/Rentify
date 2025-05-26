@@ -1,5 +1,7 @@
+// This function creates a table for tenants in the database.
+
 const createTenantsTable = async (pool) => {
-	const query = `
+  const query = `
     CREATE TABLE IF NOT EXISTS tenants (
       id SERIAL PRIMARY KEY,
       name VARCHAR(100) NOT NULL,
@@ -8,7 +10,7 @@ const createTenantsTable = async (pool) => {
       password VARCHAR(255) NOT NULL,
       account_created TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )`;
-	await pool.query(query);
+  await pool.query(query);
 };
 
-module.exports = createTenantsTable;
+export default createTenantsTable;
