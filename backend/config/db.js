@@ -1,13 +1,18 @@
-require("dotenv").config();
+import dotenv from "dotenv";
+dotenv.config();
+
 import { Pool } from "pg";
 
 // Table functions
-import createLandlordTable from "./tables/landlord";
-import createTenantsTable from "./tables/tenants";
-import createLodgesTable from "./tables/lodges";
-import createLodgesImagesTable from "./tables/lodges_images";
-import createTenantFavoritesTable from "./tables/tenants_favorites";
-import createLodgesReviewsTable from "./tables/lodges_reviews";
+import createLandlordTable from "../tables/landlord.js";
+import createTenantsTable from "../tables/tenants.js";
+import createLodgesTable from "../tables/lodges.js";
+import createLodgesImagesTable from "../tables/lodges_images.js";
+import createTenantFavoritesTable from "../tables/tenants_favorites.js";
+import createLodgesReviewsTable from "../tables/lodges_reviews.js";
+import createAdminTable from "../tables/admin.js";
+import createFeedbackTable from "../tables/feedback.js";
+
 const pool = new Pool({
   user: process.env.DB_USER,
   host: process.env.DB_HOST,
@@ -24,7 +29,8 @@ async function createTables() {
     await createLodgesImagesTable(pool);
     await createLodgesReviewsTable(pool);
     await createTenantFavoritesTable(pool);
-
+    await createAdminTable(pool);
+    await createFeedbackTable(pool);
     console.log("All tables are ready.");
   } catch (err) {
     console.error("Error running migrations:", err);
@@ -32,7 +38,4 @@ async function createTables() {
   }
 }
 
-export default {
-  pool,
-  createTables,
-};
+export { pool, createTables };

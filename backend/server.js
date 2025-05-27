@@ -1,32 +1,43 @@
+// Import necessary modules
 import express from "express";
-import { join } from "path";
-import { createTables } from "./db";
-import landlordRoutes from "./routes/landlord";
-import tenantRoutes from "./routes/tenants";
+import { join, dirname } from "path";
+import { fileURLToPath } from "url";
+
+// Import custom modules
+import { createTables } from "./config/db.js"; // Function to create DB tables if they don't exist
+import landlordRoutes from "./routes/landlord.js"; // Routes for landlord-related operations
+import tenantRoutes from "./routes/tenants.js"; // Routes for tenant-related operations
+
+// Set up __dirname in ES module context
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+// Initialize Express app
 const app = express();
-const PORT = 3000;
+const PORT = 3000; // Port number where server will run
 
-// Middleware
+// Middleware to parse JSON request bodies
 app.use(express.json());
-app.use("/uploads", express.static(join(__dirname, "uploads"))); // Serve image files
 
-// Routes
-app.use("/api/landlord", landlordRoutes);
-app.use("/api/tenant", tenantRoutes);
+// Serve static image files from 'uploads' directory
+app.use("/uploads", express.static(join(__dirname, "uploads")));
 
+// API route handlers
+app.use("/api/landlord", landlordRoutes); // Handle requests starting with /api/landlord
+app.use("/api/tenant", tenantRoutes); // Handle requests starting with /api/tenant
 
-// Start server after tables are created
+// Function to start server after ensuring tables are created
 async function startServer() {
   try {
-    await createTables();
+    await createTables(); // Ensure necessary database tables are ready
     app.listen(PORT, () => {
       console.log(`Server running at http://localhost:${PORT}`);
     });
   } catch (err) {
     console.error("Failed to start server:", err);
-    process.exit(1);
+    process.exit(1); // Exit process with error code
   }
 }
 
+// Run the server
 startServer();
-

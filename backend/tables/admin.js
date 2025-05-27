@@ -2,7 +2,7 @@
 
 const createAdminTable = async (pool) => {
   const query = `
- CREATE TABLE admins (
+ CREATE TABLE IF NOT EXISTS admins (
   id SERIAL PRIMARY KEY,
   username TEXT UNIQUE NOT NULL,
   password_hash TEXT NOT NULL,

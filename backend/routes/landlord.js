@@ -1,15 +1,22 @@
 import { Router } from "express";
 import { hash } from "bcryptjs";
-import { single } from "../middlewares/upload";
-import { pool } from "../db";
+import { compare } from "bcryptjs";
+import upload from "../middlewares/upload.js";
+import { pool } from "../config/db.js";
 import { body, validationResult } from "express-validator";
 
+import pkg from "jsonwebtoken";
+
+import dotenv from "dotenv";
+dotenv.config();
+
+const { sign, verify } = pkg;
 const router = Router();
 
 // POST /api/landlord/register
 router.post(
   "/register",
-  single("profile_picture"),
+  upload.single("profile_picture"),
   [
     body("name").trim().notEmpty().withMessage("Name is required"),
     body("email").isEmail().withMessage("Valid email is required"),
@@ -51,7 +58,7 @@ router.post(
 
       // Insert landlord into database
       const query = `
-        INSERT INTO landlord 
+        INSERT INTO landlords 
         (name, email, phone_number, password, profile_picture, address, gender, language_preference)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         RETURNING id, name, email
@@ -80,5 +87,63 @@ router.post(
     }
   }
 );
+
+// POST /api/landlord/login
+router.post(
+  "/login",
+  [
+    body("email").isEmail().withMessage("Valid email is required"),
+    body("password").notEmpty().withMessage("Password is required"),
+  ],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const { email, password } = req.body;
+
+      // Check if landlord exists
+      const result = await pool.query(
+        "SELECT * FROM landlords WHERE email = $1",
+        [email]
+      );
+      if (result.rows.length === 0) {
+        return res.status(400).json({ error: "email does not exists" });
+      }
+
+      const landlord = result.rows[0];
+
+      // Check password
+      const isMatch = await compare(password, landlord.password);
+      if (!isMatch) {
+        return res.status(400).json({ error: "wrong password" });
+      }
+
+      // Generate JWT token
+      const token = sign(
+        { id: landlord.id, role: "landlord" },
+        process.env.JWT_SECRET,
+        { expiresIn: "7d" }
+      );
+
+      res.status(200).json({
+        message: "Login successful",
+        token,
+        landlord: {
+          id: landlord.id,
+          name: landlord.name,
+          email: landlord.email,
+        },
+      });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Login failed" });
+    }
+  }
+);
+
+// Profile route
 
 export default router;

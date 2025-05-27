@@ -1,6 +1,8 @@
+// This code creates a feedback table in the database
+
 const createFeedbackTable = async (pool) => {
   const query = `
-     CREATE TABLE feedback(
+     CREATE TABLE IF NOT EXISTS feedbacks(
     id SERIAL PRIMARY KEY,
     name TEXT, -- optional if anonymous
     email TEXT, -- optional
