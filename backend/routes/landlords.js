@@ -67,9 +67,7 @@ router.post(
 router.post(
   "/login",
   [
-    body("phone_number")
-      .isMobilePhone()
-      .withMessage("Valid phone number is required"),
+    body("email").isEmail().withMessage("Valid email is required"),
     body("password").notEmpty().withMessage("Password is required"),
   ],
   async (req, res) => {
@@ -79,15 +77,15 @@ router.post(
         return res.status(400).json({ errors: errors.array() });
       }
 
-      const { phone_number, password } = req.body;
+      const { email, password } = req.body;
 
       // Check if landlord exists
       const result = await pool.query(
-        "SELECT * FROM landlords WHERE phone_number = $1",
-        [phone_number]
+        "SELECT * FROM landlords WHERE email = $1",
+        [email]
       );
       if (result.rows.length === 0) {
-        return res.status(400).json({ error: "phone number does not exists" });
+        return res.status(400).json({ error: "email number does not exists" });
       }
 
       const landlord = result.rows[0];
