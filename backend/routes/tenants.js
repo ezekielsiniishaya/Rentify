@@ -12,14 +12,13 @@ const { sign, verify } = pkg;
 
 const router = Router();
 
-// POST /api/tenant/register
+// POST /api/tenants/register
 router.post(
   "/register",
   [
-    body("name").trim().notEmpty().withMessage("Name is required"),
     body("email").isEmail().withMessage("Valid email is required"),
     body("phone_number")
-      .optional()
+      .notEmpty()
       .isMobilePhone()
       .withMessage("Valid phone number required"),
     body("password")
@@ -33,7 +32,7 @@ router.post(
         return res.status(400).json({ errors: errors.array() });
       }
 
-      const { name, email, phone_number, password } = req.body;
+      const { email, phone_number, password } = req.body;
 
       // Hash password
       const hashedPassword = await hash(password, 10);
@@ -41,12 +40,12 @@ router.post(
       // Add tenant to database
       const query = `
         INSERT INTO tenants 
-        (name, email, phone_number, password)
-        VALUES ($1, $2, $3, $4)
+        (email, phone_number, password)
+        VALUES ($1, $2, $3)
         RETURNING id, name, email
       `;
 
-      const values = [name, email, phone_number, hashedPassword];
+      const values = [email, phone_number, hashedPassword];
 
       const result = await pool.query(query, values);
 
@@ -61,11 +60,13 @@ router.post(
   }
 );
 
-// POST /api/tenant/login
+// POST /api/tenants/login
 router.post(
   "/login",
   [
-    body("email").isEmail().withMessage("Valid email is required"),
+    body("phone_number")
+      .isMobilePhone()
+      .withMessage("Valid phone number is required"),
     body("password").notEmpty().withMessage("Password is required"),
   ],
   async (req, res) => {
@@ -75,14 +76,14 @@ router.post(
         return res.status(400).json({ errors: errors.array() });
       }
 
-      const { email, password } = req.body;
+      const { phone_number, password } = req.body;
 
       const result = await pool.query(
-        "SELECT * FROM tenants WHERE email = $1",
-        [email]
+        "SELECT * FROM tenants WHERE phone_number = $1",
+        [phone_number]
       );
       if (result.rows.length === 0) {
-        return res.status(400).json({ error: "email does not exists" });
+        return res.status(400).json({ error: "phone number does not exists" });
       }
 
       const tenant = result.rows[0];

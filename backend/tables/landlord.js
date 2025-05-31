@@ -6,7 +6,7 @@ const createLandlordTable = async (pool) => {
       id SERIAL PRIMARY KEY,
       name VARCHAR(100),
       email VARCHAR(100) UNIQUE NOT NULL,
-      phone_number VARCHAR(20) UNIQUE NOT NULL,
+      phone_number VARCHAR(11) UNIQUE NOT NULL CHECK (char_length(phone_number) = 11),
       password VARCHAR(255) NOT NULL,
       profile_picture TEXT,
       address TEXT,

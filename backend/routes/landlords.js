@@ -13,23 +13,20 @@ dotenv.config();
 const { sign, verify } = pkg;
 const router = Router();
 
-// POST /api/landlord/register
+// POST /api/landlords/register
 router.post(
   "/register",
-  upload.single("profile_picture"),
+  // Checks for user inputs
   [
-    body("name").trim().notEmpty().withMessage("Name is required"),
     body("email").isEmail().withMessage("Valid email is required"),
     body("phone_number")
-      .optional()
+      .notEmpty()
+      .withMessage("Phone number is required")
       .isMobilePhone()
       .withMessage("Valid phone number required"),
     body("password")
       .isLength({ min: 6 })
       .withMessage("Password must be at least 6 characters"),
-    body("address").optional().trim(),
-    body("gender").optional().isIn(["male", "female", "other"]),
-    body("language_preference").optional().trim(),
   ],
   async (req, res) => {
     try {
@@ -38,42 +35,20 @@ router.post(
         return res.status(400).json({ errors: errors.array() });
       }
 
-      const {
-        name,
-        email,
-        phone_number,
-        password,
-        address,
-        gender,
-        language_preference,
-      } = req.body;
+      const { email, phone_number, password } = req.body;
 
       // Hash password
       const hashedPassword = await hash(password, 10);
 
-      // Generate image URL
-      const imageUrl = req.file
-        ? `${req.protocol}://${req.get("host")}/uploads/landlords/${req.file.filename}`
-        : null;
-
       // Insert landlord into database
       const query = `
         INSERT INTO landlords 
-        (name, email, phone_number, password, profile_picture, address, gender, language_preference)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-        RETURNING id, name, email
+        (email, phone_number, password)
+        VALUES ($1, $2, $3)
+        RETURNING id, email
       `;
 
-      const values = [
-        name,
-        email,
-        phone_number,
-        hashedPassword,
-        imageUrl,
-        address,
-        gender,
-        language_preference,
-      ];
+      const values = [email, phone_number, hashedPassword];
 
       const result = await pool.query(query, values);
 
@@ -88,11 +63,13 @@ router.post(
   }
 );
 
-// POST /api/landlord/login
+// POST /api/landlords/login
 router.post(
   "/login",
   [
-    body("email").isEmail().withMessage("Valid email is required"),
+    body("phone_number")
+      .isMobilePhone()
+      .withMessage("Valid phone number is required"),
     body("password").notEmpty().withMessage("Password is required"),
   ],
   async (req, res) => {
@@ -102,15 +79,15 @@ router.post(
         return res.status(400).json({ errors: errors.array() });
       }
 
-      const { email, password } = req.body;
+      const { phone_number, password } = req.body;
 
       // Check if landlord exists
       const result = await pool.query(
-        "SELECT * FROM landlords WHERE email = $1",
-        [email]
+        "SELECT * FROM landlords WHERE phone_number = $1",
+        [phone_number]
       );
       if (result.rows.length === 0) {
-        return res.status(400).json({ error: "email does not exists" });
+        return res.status(400).json({ error: "phone number does not exists" });
       }
 
       const landlord = result.rows[0];

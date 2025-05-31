@@ -5,7 +5,7 @@ import { fileURLToPath } from "url";
 
 // Import custom modules
 import { createTables } from "./config/db.js"; // Function to create DB tables if they don't exist
-import landlordRoutes from "./routes/landlord.js"; // Routes for landlord-related operations
+import landlordRoutes from "./routes/landlords.js"; // Routes for landlord-related operations
 import tenantRoutes from "./routes/tenants.js"; // Routes for tenant-related operations
 
 // Set up __dirname in ES module context
@@ -23,8 +23,8 @@ app.use(express.json());
 app.use("/uploads", express.static(join(__dirname, "uploads")));
 
 // API route handlers
-app.use("/api/landlord", landlordRoutes); // Handle requests starting with /api/landlord
-app.use("/api/tenant", tenantRoutes); // Handle requests starting with /api/tenant
+app.use("/api/landlords", landlordRoutes); // Handle requests starting with /api/landlord
+app.use("/api/tenants", tenantRoutes); // Handle requests starting with /api/tenant
 
 // Function to start server after ensuring tables are created
 async function startServer() {
