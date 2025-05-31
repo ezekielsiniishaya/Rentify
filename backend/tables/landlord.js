@@ -4,9 +4,9 @@ const createLandlordTable = async (pool) => {
   const query = `
     CREATE TABLE IF NOT EXISTS landlords (
       id SERIAL PRIMARY KEY,
-      name VARCHAR(100) NOT NULL,
+      name VARCHAR(100),
       email VARCHAR(100) UNIQUE NOT NULL,
-      phone_number VARCHAR(20),
+      phone_number VARCHAR(20) UNIQUE NOT NULL,
       password VARCHAR(255) NOT NULL,
       profile_picture TEXT,
       address TEXT,
