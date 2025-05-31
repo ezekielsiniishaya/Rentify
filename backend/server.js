@@ -8,19 +8,19 @@ import { createTables } from "./config/db.js"; // Function to create DB tables i
 import landlordRoutes from "./routes/landlords.js"; // Routes for landlord-related operations
 import tenantRoutes from "./routes/tenants.js"; // Routes for tenant-related operations
 
-// Set up __dirname in ES module context
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-
 // Initialize Express app
 const app = express();
 const PORT = 3000; // Port number where server will run
 
-// Middleware to parse JSON request bodies
-app.use(express.json());
+// Set up __dirname in ES module context
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 // Serve static image files from 'uploads' directory
 app.use("/uploads", express.static(join(__dirname, "uploads")));
+
+// Middleware to parse JSON request bodies
+app.use(express.json());
 
 // API route handlers
 app.use("/api/landlords", landlordRoutes); // Handle requests starting with /api/landlord

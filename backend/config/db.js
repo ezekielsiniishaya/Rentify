@@ -10,7 +10,7 @@ import createLodgesTable from "../tables/lodges.js";
 import createLodgesImagesTable from "../tables/lodges_images.js";
 import createTenantFavoritesTable from "../tables/tenants_favorites.js";
 import createLodgesReviewsTable from "../tables/lodges_reviews.js";
-import createAdminTable from "../tables/admins.js";
+import createAdminTable from "../tables/admin.js";
 import createFeedbackTable from "../tables/feedback.js";
 
 const pool = new Pool({

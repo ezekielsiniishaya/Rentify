@@ -123,4 +123,112 @@ router.post(
 
 // Profile route
 
+// Middleware to authenticate landlord using JWT
+function authenticateLandlord(req, res, next) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return res.status(401).json({ error: "No token provided" });
+  }
+  const token = authHeader.split(" ")[1];
+  try {
+    const decoded = verify(token, process.env.JWT_SECRET);
+    req.landlord = decoded;
+    next();
+  } catch (err) {
+    return res.status(401).json({ error: "Invalid token" });
+  }
+}
+
+// GET /api/landlords/profile
+router.get("/profile", authenticateLandlord, async (req, res) => {
+  try {
+    const landlordId = req.landlord.id;
+    const result = await pool.query(
+      `SELECT id, email, phone_number, account_created, address, display_status, gender, name, language_preference, profile_picture, verification_status 
+       FROM landlords 
+       WHERE id = $1`,
+      [landlordId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Landlord not found" });
+    }
+    res.status(200).json({ landlord: result.rows[0] });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch profile" });
+  }
+});
+router.put(
+  "/profile",
+  authenticateLandlord,
+  upload.single("profile_picture"),
+  [
+    body("phone_number")
+      .optional()
+      .isMobilePhone()
+      .withMessage("Valid phone number required"),
+    body("name").optional().isString(),
+    body("address").optional().isString(),
+    body("gender").optional().isIn(["male", "female"]),
+    body("language_preference").optional().isString(),
+  ],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+      if (req.file) {
+        const imageUrl = `${req.protocol}://${req.get("host")}/uploads/landlords/${req.file.filename}`;
+        req.body.profile_picture = imageUrl;
+      }
+
+      const landlordId = req.landlord.id;
+      const fields = [
+        "phone_number",
+        "name",
+        "address",
+        "gender",
+        "language_preference",
+        "display_status",
+        "profile_picture",
+      ];
+      const updates = [];
+      const values = [];
+      let idx = 1;
+
+      for (const field of fields) {
+        if (req.body[field] !== undefined) {
+          updates.push(`${field} = $${idx}`);
+          values.push(req.body[field]);
+          idx++;
+        }
+      }
+
+      if (updates.length === 0) {
+        return res.status(400).json({ error: "No fields to update" });
+      }
+
+      values.push(landlordId);
+
+      const query = `
+        UPDATE landlords
+        SET ${updates.join(", ")}
+        WHERE id = $${idx}
+        RETURNING phone_number, address, gender, name, language_preference, profile_picture
+      `;
+
+      const result = await pool.query(query, values);
+
+      res.status(200).json({
+        message: "Profile updated successfully",
+        landlord: result.rows[0],
+      });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Failed to update profile" });
+    }
+  }
+);
 export default router;
