@@ -1,10 +1,10 @@
 import { Router } from "express";
 import { hash } from "bcryptjs";
 import { compare } from "bcryptjs";
-import upload from "../middlewares/upload.js";
+import { landlordUpload } from "../utils/upload.js";
 import { pool } from "../config/db.js";
 import { body, validationResult } from "express-validator";
-
+import authMiddleware from "../middlewares/auth.js";
 import pkg from "jsonwebtoken";
 
 import dotenv from "dotenv";
@@ -12,7 +12,6 @@ dotenv.config();
 
 const { sign, verify } = pkg;
 const router = Router();
-
 // POST /api/landlords/register
 router.post(
   "/register",
@@ -119,48 +118,59 @@ router.post(
   }
 );
 
-// Profile route
+// Profile Route
 
-// Middleware to authenticate landlord using JWT
-function authenticateLandlord(req, res, next) {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return res.status(401).json({ error: "No token provided" });
-  }
-  const token = authHeader.split(" ")[1];
+router.get("/profile", authMiddleware, async (req, res) => {
   try {
-    const decoded = verify(token, process.env.JWT_SECRET);
-    req.landlord = decoded;
-    next();
-  } catch (err) {
-    return res.status(401).json({ error: "Invalid token" });
-  }
-}
+    const landlordId = req.user.id;
 
-// GET /api/landlords/profile
-router.get("/profile", authenticateLandlord, async (req, res) => {
-  try {
-    const landlordId = req.landlord.id;
-    const result = await pool.query(
-      `SELECT id, email, phone_number, account_created, address, display_status, gender, name, language_preference, profile_picture, verification_status 
+    // 1. First get the landlord profile
+    const landlordResult = await pool.query(
+      `SELECT id, email, phone_number, account_created, address, 
+              display_status, gender, name, language_preference, 
+              profile_picture, verification_status 
        FROM landlords 
        WHERE id = $1`,
       [landlordId]
     );
 
-    if (result.rows.length === 0) {
+    if (landlordResult.rows.length === 0) {
       return res.status(404).json({ error: "Landlord not found" });
     }
-    res.status(200).json({ landlord: result.rows[0] });
+
+    // 2. Get all lodges with their images for this landlord
+    const lodgesResult = await pool.query(
+      `SELECT l.id, l.name, l.description, l.address, l.price, 
+              l.capacity, l.available_rooms, l.verification_status, 
+              l.display_status, l.created_at,
+              COALESCE(
+                (SELECT json_agg(li.image_url)
+                 FROM lodge_images li
+                 WHERE li.lodge_id = l.id),
+                '[]'::json
+              ) AS images
+       FROM lodges l
+       WHERE l.landlord_id = $1`,
+      [landlordId]
+    );
+
+    const landlord = {
+      ...landlordResult.rows[0],
+      lodges: lodgesResult.rows,
+    };
+
+    res.status(200).json({ landlord });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to fetch profile" });
   }
 });
+
+// Update profile
 router.put(
   "/profile",
-  authenticateLandlord,
-  upload.single("profile_picture"),
+  authMiddleware,
+  landlordUpload.single("image"),
   [
     body("phone_number")
       .optional()
@@ -182,7 +192,7 @@ router.put(
         req.body.profile_picture = imageUrl;
       }
 
-      const landlordId = req.landlord.id;
+      const landlordId = req.user.id;
       const fields = [
         "phone_number",
         "name",
@@ -229,4 +239,5 @@ router.put(
     }
   }
 );
+
 export default router;

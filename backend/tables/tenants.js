@@ -4,7 +4,7 @@ const createTenantsTable = async (pool) => {
   const query = `
     CREATE TABLE IF NOT EXISTS tenants (
       id SERIAL PRIMARY KEY,
-      email VARCHAR(100) UNIQUE NOT NULL,
+      name VARCHAR(100) NOT NULL,
       phone_number VARCHAR(11) UNIQUE NOT NULL CHECK (char_length(phone_number) = 11),
       password VARCHAR(255) NOT NULL,
       account_created TIMESTAMP DEFAULT CURRENT_TIMESTAMP

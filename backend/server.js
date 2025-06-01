@@ -7,6 +7,7 @@ import { fileURLToPath } from "url";
 import { createTables } from "./config/db.js"; // Function to create DB tables if they don't exist
 import landlordRoutes from "./routes/landlords.js"; // Routes for landlord-related operations
 import tenantRoutes from "./routes/tenants.js"; // Routes for tenant-related operations
+import lodgeRoutes from "./routes/lodges.js"; // Routes for lodge-related operations
 
 // Initialize Express app
 const app = express();
@@ -25,6 +26,7 @@ app.use(express.json());
 // API route handlers
 app.use("/api/landlords", landlordRoutes); // Handle requests starting with /api/landlord
 app.use("/api/tenants", tenantRoutes); // Handle requests starting with /api/tenant
+app.use("/api/lodges", lodgeRoutes); // Handle requests starting with /lodges
 
 // Function to start server after ensuring tables are created
 async function startServer() {

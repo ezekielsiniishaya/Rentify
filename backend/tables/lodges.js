@@ -5,7 +5,7 @@ const createLodgesTable = async (pool) => {
     CREATE TABLE IF NOT EXISTS lodges (
       id SERIAL PRIMARY KEY,
       landlord_id INTEGER NOT NULL REFERENCES landlords(id) ON DELETE CASCADE,
-      name VARCHAR(100) NOT NULL,
+      name VARCHAR(100) UNIQUE NOT NULL,
       description TEXT,
       address TEXT NOT NULL,
       price NUMERIC(10, 2) NOT NULL,

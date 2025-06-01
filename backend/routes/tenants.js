@@ -4,8 +4,9 @@ import { compare } from "bcryptjs";
 import { pool } from "../config/db.js";
 import { body, validationResult } from "express-validator";
 import pkg from "jsonwebtoken";
-
+import authMiddleware from "../middlewares/auth.js";
 import dotenv from "dotenv";
+
 dotenv.config();
 
 const { sign, verify } = pkg;
@@ -112,5 +113,44 @@ router.post(
     }
   }
 );
+
+// Profile route
+router.get("/profile", authMiddleware, async (req, res) => {
+  try {
+    const tenantId = req.user.id;
+
+    // Fetch tenant profile
+    const profileResult = await pool.query(
+      "SELECT id, name, phone_number FROM tenants WHERE id = $1",
+      [tenantId]
+    );
+
+    if (profileResult.rows.length === 0) {
+      return res.status(404).json({ error: "Tenant not found" });
+    }
+
+    const tenantProfile = profileResult.rows[0];
+
+    // Fetch favorite lodges
+    const favoritesResult = await pool.query(
+      `SELECT lodges.*
+       FROM tenant_favorites
+       JOIN lodges ON tenant_favorites.lodge_id = lodges.id
+       WHERE tenant_favorites.tenant_id = $1`,
+      [tenantId]
+    );
+
+    const favoriteLodges = favoritesResult.rows;
+
+    // Return combined response
+    res.status(200).json({
+      ...tenantProfile,
+      favoriteLodges,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch profile" });
+  }
+});
 
 export default router;
