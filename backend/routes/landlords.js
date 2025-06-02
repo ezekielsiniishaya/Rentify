@@ -6,7 +6,7 @@ import { pool } from "../config/db.js";
 import { body, validationResult } from "express-validator";
 import authMiddleware from "../middlewares/auth.js";
 import pkg from "jsonwebtoken";
-
+import { deleteOldImage } from "../utils/upload.js"; // Adjust path as needed
 import dotenv from "dotenv";
 dotenv.config();
 
@@ -187,11 +187,18 @@ router.put(
       if (!errors.isEmpty()) {
         return res.status(400).json({ errors: errors.array() });
       }
-      if (req.file) {
-        const imageUrl = `${req.protocol}://${req.get("host")}/uploads/landlords/${req.file.filename}`;
-        req.body.profile_picture = imageUrl;
-      }
+if (req.file) {
+  const { rows } = await pool.query(
+    "SELECT profile_picture FROM landlords WHERE id = $1",
+    [req.user.id]
+  );
+  const oldImageUrl = rows[0]?.profile_picture;
 
+  deleteOldImage(oldImageUrl); // ✅ Clean and reusable
+
+  const imageUrl = `${req.protocol}://${req.get("host")}/uploads/landlords/${req.file.filename}`;
+  req.body.profile_picture = imageUrl;
+}
       const landlordId = req.user.id;
       const fields = [
         "phone_number",

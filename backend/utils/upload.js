@@ -2,7 +2,8 @@ import multer from "multer";
 import { diskStorage } from "multer";
 import { extname } from "path";
 import { v4 as uuidv4 } from "uuid";
-
+import fs from "fs";                                  import path from "path";
+import { fileURLToPath } from "url";
 // ===== Multer config for LANDLORDS =====
 const landlordStorage = diskStorage({
   destination: (req, file, cb) => {
@@ -44,3 +45,22 @@ export const lodgeUpload = multer({
   storage: lodgeStorage,
   fileFilter,
 });
+
+// __dirname equivalent in ES Modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+/**
+ * Deletes an old profile picture from the uploads directory.
+ * @param {string} imageUrl - Full URL of the old image (e.g., http://localhost:3000/uploads/landlords/abc.jpg)
+ */
+export function deleteOldImage(imageUrl) {
+  if (imageUrl && imageUrl.includes("/uploads/landlords/")) {
+    const filename = imageUrl.split("/uploads/landlords/")[1];
+    const filepath = path.join(__dirname, "../uploads/landlords", filename);
+
+    if (fs.existsSync(filepath)) {
+      fs.unlinkSync(filepath); // Or use fs.promises.unlink(filepath)
+    }
+  }
+}
