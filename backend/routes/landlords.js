@@ -1,6 +1,5 @@
 import { Router } from "express";
-import { hash } from "bcryptjs";
-import { compare } from "bcryptjs";
+import { hash, compare } from "bcryptjs";
 import { landlordUpload } from "../utils/upload.js";
 import { pool } from "../config/db.js";
 import { body, validationResult } from "express-validator";
@@ -10,12 +9,13 @@ import { deleteOldImage } from "../utils/upload.js"; // Adjust path as needed
 import dotenv from "dotenv";
 dotenv.config();
 
-const { sign, verify } = pkg;
+const { sign } = pkg;
 const router = Router();
+
 // POST /api/landlords/register
 router.post(
   "/register",
-  // Checks for user inputs
+  // Validate user input
   [
     body("email").isEmail().withMessage("Valid email is required"),
     body("phone_number")
@@ -35,6 +35,15 @@ router.post(
       }
 
       const { email, phone_number, password } = req.body;
+
+      // Check if landlord already exists
+      const exists = await pool.query(
+        "SELECT id FROM landlords WHERE email = $1",
+        [email]
+      );
+      if (exists.rows.length > 0) {
+        return res.status(400).json({ error: "Email already registered" });
+      }
 
       // Hash password
       const hashedPassword = await hash(password, 10);
@@ -84,7 +93,7 @@ router.post(
         [email]
       );
       if (result.rows.length === 0) {
-        return res.status(400).json({ error: "email number does not exists" });
+        return res.status(400).json({ error: "Email does not exist" });
       }
 
       const landlord = result.rows[0];
@@ -92,7 +101,7 @@ router.post(
       // Check password
       const isMatch = await compare(password, landlord.password);
       if (!isMatch) {
-        return res.status(400).json({ error: "wrong password" });
+        return res.status(400).json({ error: "Wrong password" });
       }
 
       // Generate JWT token
@@ -118,13 +127,12 @@ router.post(
   }
 );
 
-// Profile Route
-
+// GET /api/landlords/profile
 router.get("/profile", authMiddleware, async (req, res) => {
   try {
     const landlordId = req.user.id;
 
-    // 1. First get the landlord profile
+    // Get landlord profile
     const landlordResult = await pool.query(
       `SELECT id, email, phone_number, account_created, address, 
               display_status, gender, name, language_preference, 
@@ -138,7 +146,7 @@ router.get("/profile", authMiddleware, async (req, res) => {
       return res.status(404).json({ error: "Landlord not found" });
     }
 
-    // 2. Get all lodges with their images for this landlord
+    // Get all lodges with their images for this landlord
     const lodgesResult = await pool.query(
       `SELECT l.id, l.name, l.description, l.address, l.price, 
               l.capacity, l.available_rooms, l.verification_status, 
@@ -166,7 +174,7 @@ router.get("/profile", authMiddleware, async (req, res) => {
   }
 });
 
-// Update profile
+// PUT /api/landlords/profile
 router.put(
   "/profile",
   authMiddleware,
@@ -187,18 +195,21 @@ router.put(
       if (!errors.isEmpty()) {
         return res.status(400).json({ errors: errors.array() });
       }
-if (req.file) {
-  const { rows } = await pool.query(
-    "SELECT profile_picture FROM landlords WHERE id = $1",
-    [req.user.id]
-  );
-  const oldImageUrl = rows[0]?.profile_picture;
+      // Handle profile picture upload
+      if (req.file) {
+        const { rows } = await pool.query(
+          "SELECT profile_picture FROM landlords WHERE id = $1",
+          [req.user.id]
+        );
+        const oldImageUrl = rows[0]?.profile_picture;
 
-  deleteOldImage(oldImageUrl); // ✅ Clean and reusable
+        if (oldImageUrl) {
+          deleteOldImage(oldImageUrl, "landlord"); // Remove old image if exists
+        }
 
-  const imageUrl = `${req.protocol}://${req.get("host")}/uploads/landlords/${req.file.filename}`;
-  req.body.profile_picture = imageUrl;
-}
+        const imageUrl = `${req.protocol}://${req.get("host")}/uploads/landlords/${req.file.filename}`;
+        req.body.profile_picture = imageUrl;
+      }
       const landlordId = req.user.id;
       const fields = [
         "phone_number",
@@ -213,6 +224,7 @@ if (req.file) {
       const values = [];
       let idx = 1;
 
+      // Build update query dynamically
       for (const field of fields) {
         if (req.body[field] !== undefined) {
           updates.push(`${field} = $${idx}`);
@@ -246,5 +258,11 @@ if (req.file) {
     }
   }
 );
+
+// POST /api/landlords/logout
+router.post("/logout", (res) => {
+  // Token deletion should be handled on the frontend
+  res.status(200).json({ message: "Logout successful" });
+});
 
 export default router;

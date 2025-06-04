@@ -3,7 +3,7 @@ import { body, validationResult } from "express-validator";
 import authMiddleware from "../middlewares/auth.js";
 import { lodgeUpload } from "../utils/upload.js";
 import { pool } from "../config/db.js";
-
+import { deleteOldImage } from "../utils/upload.js";
 const router = express.Router();
 
 // ADD LODGE
@@ -12,27 +12,34 @@ router.post(
   authMiddleware,
   lodgeUpload.single("image"),
   [
-    body("name").optional().notEmpty().withMessage("Name is required"),
-    body("address").optional().notEmpty().withMessage("Address is required"),
-
-    // Allow string values that can be converted to numbers
+    // Validation for required fields
+    body("name").notEmpty().withMessage("Name is required"),
+    body("address").notEmpty().withMessage("Address is required"),
     body("price")
-      .optional()
-      .custom((value) => !isNaN(value))
-      .withMessage("Price must be a number"),
-
+      .notEmpty()
+      .withMessage("Price is required")
+      .custom((value) => !isNaN(value) && Number(value) > 0)
+      .withMessage("Price must be a positive number"),
     body("capacity")
-      .optional()
+      .notEmpty()
+      .withMessage("Capacity is required")
       .custom((value) => Number.isInteger(Number(value)) && Number(value) > 0)
       .withMessage("Capacity must be a positive integer"),
-
     body("available_rooms")
-      .optional()
-      .custom((value) => Number.isInteger(Number(value)) && Number(value) > 0)
-      .withMessage("Available rooms must be a positive integer"),
+      .notEmpty()
+      .withMessage("Available rooms is required")
+      .custom((value, { req }) => {
+        const rooms = Number(value);
+        const cap = Number(req.body.capacity);
+        return Number.isInteger(rooms) && rooms > 0 && (!cap || rooms <= cap);
+      })
+      .withMessage(
+        "Available rooms must be a positive integer not exceeding capacity"
+      ),
   ],
   async (req, res) => {
     try {
+      // Check for validation errors
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
         return res.status(400).json({ errors: errors.array() });
@@ -42,7 +49,17 @@ router.post(
       const landlordId = req.user.id;
       const { name, description, address, price, capacity, available_rooms } =
         req.body;
-
+      // Prevent duplicate lodge names for same landlord
+      const existing = await pool.query(
+        `SELECT id FROM lodges WHERE landlord_id = $1 AND name = $2`,
+        [landlordId, name]
+      );
+      if (existing.rows.length > 0) {
+        return res
+          .status(409)
+          .json({ error: "You already added a lodge with this name." });
+      }
+      // Insert lodge into database
       const lodgeQuery = `
         INSERT INTO lodges 
         (landlord_id, name, description, address, price, capacity, available_rooms)
@@ -61,6 +78,7 @@ router.post(
       const lodgeResult = await pool.query(lodgeQuery, lodgeValues);
       const lodgeId = lodgeResult.rows[0].id;
 
+      // If image uploaded, save image URL
       if (req.file) {
         const imageUrl = `${req.protocol}://${req.get("host")}/uploads/lodges/${req.file.filename}`;
         req.body.image = imageUrl;
@@ -82,8 +100,9 @@ router.post(
 );
 
 // GET BASIC LODGES (with minimal landlord info)
-router.get("/", async (req, res) => {
+router.get("/", async (_, res) => {
   try {
+    // Fetch all lodges with landlord info and images
     const lodgesResult = await pool.query(
       `SELECT 
          l.id, l.name, l.description, l.address, l.price,
@@ -130,7 +149,7 @@ router.get("/landlord/:landlordId", async (req, res) => {
       return res.status(404).json({ error: "Landlord not found" });
     }
 
-    // Get all lodges with images
+    // Get all lodges with images for this landlord
     const lodgesResult = await pool.query(
       `SELECT l.*,
               COALESCE(
@@ -154,26 +173,65 @@ router.get("/landlord/:landlordId", async (req, res) => {
     res.status(500).json({ error: "Failed to fetch landlord lodges" });
   }
 });
+
+// GET /:id — get full lodge details, landlord info, and images
+router.get("/:id", async (req, res) => {
+  const lodgeId = req.params.id;
+
+  try {
+    // Fetch lodge details with landlord info and images
+    const lodgeResult = await pool.query(
+      `SELECT 
+         l.id, l.name, l.description, l.address, l.price,
+         l.capacity, l.available_rooms, l.display_status, l.created_at,
+         json_build_object(
+           'id', ld.id,
+           'name', ld.name,
+           'profile_picture', ld.profile_picture,
+           'verification_status', ld.verification_status,
+           'email', ld.email,
+           'phone_number', ld.phone_number
+         ) AS landlord,
+         COALESCE(
+           (SELECT json_agg(li.image_url)
+            FROM lodge_images li
+            WHERE li.lodge_id = l.id),
+           '[]'::json
+         ) AS images
+       FROM lodges l
+       JOIN landlords ld ON l.landlord_id = ld.id
+       WHERE l.id = $1 AND l.display_status = true`,
+      [lodgeId]
+    );
+
+    if (lodgeResult.rows.length === 0) {
+      return res.status(404).json({ error: "Lodge not found or unavailable" });
+    }
+
+    res.status(200).json({ lodge: lodgeResult.rows[0] });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch lodge details" });
+  }
+});
+
 // UPDATE LODGE
 router.put(
   "/:id",
   authMiddleware,
-  lodgeUpload.single("image"),
+  lodgeUpload.array("images", 10), // Allow multiple images uploaded with field name "images", max 10
   [
+    // Optional fields validation
     body("name").optional().notEmpty().withMessage("Name is required"),
     body("address").optional().notEmpty().withMessage("Address is required"),
-
-    // Allow string values that can be converted to numbers
     body("price")
       .optional()
       .custom((value) => !isNaN(value))
       .withMessage("Price must be a number"),
-
     body("capacity")
       .optional()
       .custom((value) => Number.isInteger(Number(value)) && Number(value) > 0)
       .withMessage("Capacity must be a positive integer"),
-
     body("available_rooms")
       .optional()
       .custom((value) => Number.isInteger(Number(value)) && Number(value) > 0)
@@ -182,6 +240,8 @@ router.put(
   async (req, res) => {
     const lodgeId = req.params.id;
     const landlordId = req.user.id;
+
+    // Extract possible fields from body
     const { name, description, address } = req.body;
     const price = req.body.price ? Number(req.body.price) : null;
     const capacity = req.body.capacity ? Number(req.body.capacity) : null;
@@ -190,12 +250,13 @@ router.put(
       : null;
 
     try {
+      // Validate input fields
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
         return res.status(400).json({ errors: errors.array() });
       }
 
-      // Check ownership
+      // Verify the lodge belongs to the authenticated landlord
       const check = await pool.query(
         `SELECT id FROM lodges WHERE id = $1 AND landlord_id = $2`,
         [lodgeId, landlordId]
@@ -206,7 +267,48 @@ router.put(
           .json({ error: "Unauthorized or lodge not found" });
       }
 
-      // Update lodge
+      // Check if the updated name conflicts with other lodges of the landlord
+      if (name) {
+        const conflict = await pool.query(
+          `SELECT id FROM lodges WHERE landlord_id = $1 AND name = $2 AND id <> $3`,
+          [landlordId, name, lodgeId]
+        );
+        if (conflict.rowCount > 0) {
+          return res
+            .status(409)
+            .json({ error: "A lodge with this name already exists." });
+        }
+      }
+
+      // Parse imagesToDelete from request body (should be JSON stringified array)
+      const imagesToDelete = req.body.imagesToDelete
+        ? JSON.parse(req.body.imagesToDelete)
+        : [];
+
+      // Delete old images as requested
+      for (const imageUrl of imagesToDelete) {
+        // Delete the image file from storage
+        deleteOldImage(imageUrl, "lodge");
+
+        // Delete the image record from the database
+        await pool.query(
+          `DELETE FROM lodge_images WHERE lodge_id = $1 AND image_url = $2`,
+          [lodgeId, imageUrl]
+        );
+      }
+
+      // Insert new uploaded images (if any)
+      if (req.files && req.files.length > 0) {
+        for (const file of req.files) {
+          const imageUrl = `${req.protocol}://${req.get("host")}/uploads/lodges/${file.filename}`;
+          await pool.query(
+            `INSERT INTO lodge_images (lodge_id, image_url) VALUES ($1, $2)`,
+            [lodgeId, imageUrl]
+          );
+        }
+      }
+
+      // Update lodge details (only fields provided)
       const updateQuery = `
         UPDATE lodges
         SET name = COALESCE($1, name),
@@ -229,15 +331,7 @@ router.put(
       ];
       const result = await pool.query(updateQuery, values);
 
-      // If a new image is uploaded, insert new image row (or optionally update existing)
-      if (req.file) {
-        const imageUrl = `${req.protocol}://${req.get("host")}/uploads/${req.file.filename}`;
-        await pool.query(
-          `INSERT INTO lodge_images (lodge_id, image_url) VALUES ($1, $2)`,
-          [lodgeId, imageUrl]
-        );
-      }
-
+      // Respond with updated lodge info
       res.status(200).json({ message: "Lodge updated", lodge: result.rows[0] });
     } catch (err) {
       console.error(err);
@@ -274,10 +368,10 @@ router.delete("/:id", authMiddleware, async (req, res) => {
   }
 });
 
-// Get all lodges
-
-router.get("/visible", async (req, res) => {
+// Get all lodges (visible)
+router.get("/visible", async (_, res) => {
   try {
+    // Fetch all visible lodges with one image (if any)
     const query = `
         SELECT l.id, l.name, l.description, l.address, l.price, l.capacity, l.available_rooms, l.created_at,
                i.image_url
@@ -290,6 +384,24 @@ router.get("/visible", async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to fetch visible lodges" });
+  }
+});
+
+// Display status toggle route
+router.patch("/:id/display", authMiddleware, async (req, res) => {
+  const lodgeId = req.params.id;
+  const { status } = req.body;
+
+  try {
+    // Update display status for lodge
+    await pool.query(
+      `UPDATE lodges SET display_status = $1 WHERE id = $2 AND landlord_id = $3`,
+      [status, lodgeId, req.user.id]
+    );
+    res.json({ message: `Lodge ${status ? "shown" : "hidden"}` });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to update lodge visibility" });
   }
 });
 

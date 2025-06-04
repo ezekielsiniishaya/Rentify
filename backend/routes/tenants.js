@@ -1,6 +1,5 @@
 import { Router } from "express";
-import { hash } from "bcryptjs";
-import { compare } from "bcryptjs";
+import { hash, compare } from "bcryptjs"; // Combined import for brevity
 import { pool } from "../config/db.js";
 import { body, validationResult } from "express-validator";
 import pkg from "jsonwebtoken";
@@ -17,17 +16,21 @@ const router = Router();
 router.post(
   "/register",
   [
+    // Validate email
     body("email").isEmail().withMessage("Valid email is required"),
+    // Validate phone number
     body("phone_number")
       .notEmpty()
       .isMobilePhone()
       .withMessage("Valid phone number required"),
+    // Validate password length
     body("password")
       .isLength({ min: 6 })
       .withMessage("Password must be at least 6 characters"),
   ],
   async (req, res) => {
     try {
+      // Check for validation errors
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
         return res.status(400).json({ errors: errors.array() });
@@ -38,7 +41,7 @@ router.post(
       // Hash password
       const hashedPassword = await hash(password, 10);
 
-      // Add tenant to database
+      // Insert tenant into database
       const query = `
         INSERT INTO tenants 
         (email, phone_number, password)
@@ -65,11 +68,13 @@ router.post(
 router.post(
   "/login",
   [
+    // Validate email and password
     body("email").isEmail().withMessage("Valid email is required"),
     body("password").notEmpty().withMessage("Password is required"),
   ],
   async (req, res) => {
     try {
+      // Check for validation errors
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
         return res.status(400).json({ errors: errors.array() });
@@ -77,6 +82,7 @@ router.post(
 
       const { email, password } = req.body;
 
+      // Find tenant by email
       const result = await pool.query(
         "SELECT * FROM tenants WHERE email = $1",
         [email]
@@ -87,11 +93,13 @@ router.post(
 
       const tenant = result.rows[0];
 
+      // Compare password
       const isMatch = await compare(password, tenant.password);
       if (!isMatch) {
         return res.status(400).json({ error: "wrong password" });
       }
 
+      // Generate JWT token
       const token = sign(
         { id: tenant.id, role: "tenant" },
         process.env.JWT_SECRET,
@@ -114,7 +122,7 @@ router.post(
   }
 );
 
-// Profile route
+// GET /api/tenants/profile
 router.get("/profile", authMiddleware, async (req, res) => {
   try {
     const tenantId = req.user.id;
@@ -131,7 +139,7 @@ router.get("/profile", authMiddleware, async (req, res) => {
 
     const tenantProfile = profileResult.rows[0];
 
-    // Fetch favorite lodges
+    // Fetch favorite lodges for tenant
     const favoritesResult = await pool.query(
       `SELECT lodges.*
        FROM tenant_favorites
@@ -142,7 +150,7 @@ router.get("/profile", authMiddleware, async (req, res) => {
 
     const favoriteLodges = favoritesResult.rows;
 
-    // Return combined response
+    // Return profile and favorites
     res.status(200).json({
       ...tenantProfile,
       favoriteLodges,
