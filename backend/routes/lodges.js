@@ -1,106 +1,117 @@
 import express from "express";
 import { body, validationResult } from "express-validator";
 import authMiddleware from "../middlewares/auth.js";
-import { lodgeUpload } from "../utils/upload.js";
+import multer from "multer";
+import path from "path";
+import fs from "fs";
+const memoryStorage = multer.memoryStorage();
+const lodgeUpload = multer({ storage: memoryStorage });
 import { pool } from "../config/db.js";
 import { deleteOldImage } from "../utils/upload.js";
 const router = express.Router();
 
-// ADD LODGE
-router.post(
-  "/add",
-  authMiddleware,
-  lodgeUpload.single("image"),
-  [
-    // Validation for required fields
-    body("name").notEmpty().withMessage("Name is required"),
-    body("address").notEmpty().withMessage("Address is required"),
-    body("price")
-      .notEmpty()
-      .withMessage("Price is required")
-      .custom((value) => !isNaN(value) && Number(value) > 0)
-      .withMessage("Price must be a positive number"),
-    body("capacity")
-      .notEmpty()
-      .withMessage("Capacity is required")
-      .custom((value) => Number.isInteger(Number(value)) && Number(value) > 0)
-      .withMessage("Capacity must be a positive integer"),
-    body("available_rooms")
-      .notEmpty()
-      .withMessage("Available rooms is required")
-      .custom((value, { req }) => {
-        const rooms = Number(value);
-        const cap = Number(req.body.capacity);
-        return Number.isInteger(rooms) && rooms > 0 && (!cap || rooms <= cap);
-      })
-      .withMessage(
-        "Available rooms must be a positive integer not exceeding capacity"
-      ),
-  ],
-  async (req, res) => {
-    try {
-      // Check for validation errors
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
-      }
-      console.log("Received body:", req.body);
+// Add lodge route
+lodgeUpload.array("images", 10), // Use memory storage, save after validation
+  router.post(
+    "/add",
+    authMiddleware,
+    lodgeUpload.array("images", 10), // Allow multiple images uploaded with field name "images", max 10
+    [
+      // Validation for required fields
+      body("name").notEmpty().withMessage("Name is required"),
+      body("address").notEmpty().withMessage("Address is required"),
+      body("price")
+        .notEmpty()
+        .withMessage("Price is required")
+        .custom((value) => !isNaN(value) && Number(value) > 0)
+        .withMessage("Price must be a positive number"),
+      body("capacity")
+        .notEmpty()
+        .withMessage("Capacity is required")
+        .custom((value) => Number.isInteger(Number(value)) && Number(value) > 0)
+        .withMessage("Capacity must be a positive integer"),
+      body("available_rooms")
+        .notEmpty()
+        .withMessage("Available rooms is required")
+        .custom((value, { req }) => {
+          const rooms = Number(value);
+          const cap = Number(req.body.capacity);
+          return Number.isInteger(rooms) && rooms > 0 && (!cap || rooms <= cap);
+        })
+        .withMessage(
+          "Available rooms must be a positive integer not exceeding capacity"
+        ),
+    ],
+    async (req, res) => {
+      try {
+        // Check for validation errors
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+          return res.status(400).json({ errors: errors.array() });
+        }
 
-      const landlordId = req.user.id;
-      const { name, description, address, price, capacity, available_rooms } =
-        req.body;
-      // Prevent duplicate lodge names for same landlord
-      const existing = await pool.query(
-        `SELECT id FROM lodges WHERE landlord_id = $1 AND name = $2`,
-        [landlordId, name]
-      );
-      if (existing.rows.length > 0) {
-        return res
-          .status(409)
-          .json({ error: "You already added a lodge with this name." });
-      }
-      // Insert lodge into database
-      const lodgeQuery = `
+        const landlordId = req.user.id;
+        const { name, description, address, price, capacity, available_rooms } =
+          req.body;
+        // Prevent duplicate lodge names for same landlord
+        const existing = await pool.query(
+          `SELECT id FROM lodges WHERE landlord_id = $1 AND name = $2`,
+          [landlordId, name]
+        );
+        if (existing.rows.length > 0) {
+          return res
+            .status(409)
+            .json({ error: "A lodge with this name already exists." });
+        }
+        // Insert lodge into database
+        const lodgeQuery = `
         INSERT INTO lodges 
         (landlord_id, name, description, address, price, capacity, available_rooms)
         VALUES ($1, $2, $3, $4, $5, $6, $7)
         RETURNING id, name
       `;
-      const lodgeValues = [
-        landlordId,
-        name,
-        description,
-        address,
-        price,
-        capacity,
-        available_rooms,
-      ];
-      const lodgeResult = await pool.query(lodgeQuery, lodgeValues);
-      const lodgeId = lodgeResult.rows[0].id;
+        const lodgeValues = [
+          landlordId,
+          name,
+          description,
+          address,
+          price,
+          capacity,
+          available_rooms,
+        ];
+        const lodgeResult = await pool.query(lodgeQuery, lodgeValues);
+        const lodgeId = lodgeResult.rows[0].id;
 
-      // If image uploaded, save image URL
-      if (req.file) {
-        const imageUrl = `${req.protocol}://${req.get("host")}/uploads/lodges/${req.file.filename}`;
-        req.body.image = imageUrl;
-        await pool.query(
-          `INSERT INTO lodge_images (lodge_id, image_url) VALUES ($1, $2)`,
-          [lodgeId, imageUrl]
-        );
+        // If images uploaded, save files to disk and URLs to DB
+        if (req.files && req.files.length > 0) {
+          const uploadDir = path.join(process.cwd(), "uploads", "lodges");
+          if (!fs.existsSync(uploadDir)) {
+            fs.mkdirSync(uploadDir, { recursive: true });
+          }
+          for (const file of req.files) {
+            const filename = `${Date.now()}_${file.originalname.replace(/\s+/g, "_")}`;
+            const filepath = path.join(uploadDir, filename);
+            fs.writeFileSync(filepath, file.buffer);
+            const imageUrl = `${req.protocol}://${req.get("host")}/uploads/lodges/${filename}`;
+            await pool.query(
+              `INSERT INTO lodge_images (lodge_id, image_url) VALUES ($1, $2)`,
+              [lodgeId, imageUrl]
+            );
+          }
+        }
+        res.status(201).json({
+          message: "Lodge created successfully",
+          lodge: lodgeResult.rows[0],
+        });
+      } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: "Failed to create lodge" });
       }
-
-      res.status(201).json({
-        message: "Lodge created successfully",
-        lodge: lodgeResult.rows[0],
-      });
-    } catch (err) {
-      console.error(err);
-      res.status(500).json({ error: "Failed to create lodge" });
     }
-  }
-);
+  );
 
 // GET BASIC LODGES (with minimal landlord info)
-router.get("/", async (_, res) => {
+router.get("/", authMiddleware, async (_, res) => {
   try {
     // Fetch all lodges with landlord info and images
     const lodgesResult = await pool.query(
@@ -132,7 +143,7 @@ router.get("/", async (_, res) => {
 });
 
 // GET ALL LODGES BY LANDLORD ID
-router.get("/landlord/:landlordId", async (req, res) => {
+router.get("/landlord/:landlordId", authMiddleware, async (req, res) => {
   try {
     const { landlordId } = req.params;
 
@@ -174,8 +185,50 @@ router.get("/landlord/:landlordId", async (req, res) => {
   }
 });
 
+router.get("/visible", authMiddleware, async (_, res) => {
+  try {
+    const query = `
+      SELECT 
+        l.id,
+        l.name,
+        l.description,
+        l.address,
+        l.price,
+        l.capacity,
+        l.available_rooms,
+        l.created_at,
+        COALESCE(json_agg(
+          json_build_object(
+            'url', li.image_url,
+            'is_primary', li.is_primary
+          )
+          ORDER BY li.is_primary DESC, li.id
+        ) FILTER (WHERE li.id IS NOT NULL), '[]') AS images
+      FROM lodges l
+      LEFT JOIN lodge_images li ON l.id = li.lodge_id
+      WHERE l.display_status = true
+      GROUP BY l.id
+      ORDER BY l.created_at DESC;
+    `;
+
+    const result = await pool.query(query);
+
+    // Reformat images to plain array of URLs with primary first
+    const lodges = result.rows.map((lodge) => ({
+      ...lodge,
+      images: lodge.images.map((img) => img.url),
+    }));
+
+    res.status(200).json({ lodges });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch visible lodges" });
+  }
+});
+
+
 // GET /:id — get full lodge details, landlord info, and images
-router.get("/:id", async (req, res) => {
+router.get("/:id", authMiddleware, async (req, res) => {
   const lodgeId = req.params.id;
 
   try {
@@ -299,8 +352,15 @@ router.put(
 
       // Insert new uploaded images (if any)
       if (req.files && req.files.length > 0) {
+        const uploadDir = path.join(process.cwd(), "uploads", "lodges");
+        if (!fs.existsSync(uploadDir)) {
+          fs.mkdirSync(uploadDir, { recursive: true });
+        }
         for (const file of req.files) {
-          const imageUrl = `${req.protocol}://${req.get("host")}/uploads/lodges/${file.filename}`;
+          const filename = `${Date.now()}_${file.originalname.replace(/\s+/g, "_")}`;
+          const filepath = path.join(uploadDir, filename);
+          fs.writeFileSync(filepath, file.buffer);
+          const imageUrl = `${req.protocol}://${req.get("host")}/uploads/lodges/${filename}`;
           await pool.query(
             `INSERT INTO lodge_images (lodge_id, image_url) VALUES ($1, $2)`,
             [lodgeId, imageUrl]
@@ -369,7 +429,7 @@ router.delete("/:id", authMiddleware, async (req, res) => {
 });
 
 // Get all lodges (visible)
-router.get("/visible", async (_, res) => {
+router.get("/visible", authMiddleware, async (_, res) => {
   try {
     // Fetch all visible lodges with one image (if any)
     const query = `
