@@ -226,8 +226,7 @@ router.get("/visible", authMiddleware, async (_, res) => {
   }
 });
 
-
-// GET /:id — get full lodge details, landlord info, and images
+// GET /:id — get full lodge details, landlord info, images, and reviews
 router.get("/:id", authMiddleware, async (req, res) => {
   const lodgeId = req.params.id;
 
@@ -261,7 +260,27 @@ router.get("/:id", authMiddleware, async (req, res) => {
       return res.status(404).json({ error: "Lodge not found or unavailable" });
     }
 
-    res.status(200).json({ lodge: lodgeResult.rows[0] });
+    // Fetch reviews for the lodge (with tenant info)
+    const reviewsResult = await pool.query(
+      `SELECT 
+         r.id, r.rating, r.review_text, r.review_date,
+         json_build_object(
+           'id', t.id,
+           'name', t.name
+          ) AS tenant
+       FROM lodge_reviews r
+       JOIN tenants t ON r.tenant_id = t.id
+       WHERE r.lodge_id = $1
+       ORDER BY r.review_date DESC`,
+      [lodgeId]
+    );
+
+    res.status(200).json({
+      lodge: {
+        ...lodgeResult.rows[0],
+        reviews: reviewsResult.rows,
+      },
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to fetch lodge details" });
@@ -465,4 +484,90 @@ router.patch("/:id/display", authMiddleware, async (req, res) => {
   }
 });
 
+// Add lodge to favorite route
+router.post("/:lodgeId/favorite", authMiddleware, async (req, res) => {
+  try {
+    const tenantId = req.user.id;
+    const lodgeId = req.params.lodgeId;
+
+    // Check if lodge exists
+    const lodgeResult = await pool.query(
+      "SELECT id FROM lodges WHERE id = $1",
+      [lodgeId]
+    );
+    if (lodgeResult.rows.length === 0) {
+      return res.status(404).json({ error: "Lodge not found" });
+    }
+
+    // Add lodge to favorite
+    const insertQuery = `
+        INSERT INTO tenant_favorites (tenant_id, lodge_id)
+        VALUES ($1, $2)
+        RETURNING id, tenant_id, lodge_id
+      `;
+    const values = [tenantId, lodgeId];
+    const favoriteResult = await pool.query(insertQuery, values);
+
+    res.status(201).json({
+      message: "favorite lodge added successfully",
+      result: favoriteResult.rows[0],
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to add lodge to favorite" });
+  }
+});
+// Lodge review route
+router.post(
+  "/:lodgeId/reviews",
+  authMiddleware,
+  [
+    body("rating")
+      .isInt({ min: 1, max: 5 })
+      .withMessage("Rating must be between 1 and 5"),
+    body("review_text")
+      .optional()
+      .isString()
+      .isLength({ max: 500 })
+      .withMessage("Comment must be at most 500 characters"),
+  ],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const tenantId = req.user.id;
+      const lodgeId = req.params.lodgeId;
+      const { rating, review_text } = req.body;
+
+      // Check if lodge exists
+      const lodgeResult = await pool.query(
+        "SELECT id FROM lodges WHERE id = $1",
+        [lodgeId]
+      );
+      if (lodgeResult.rows.length === 0) {
+        return res.status(404).json({ error: "Lodge not found" });
+      }
+
+      // Insert review
+      const insertQuery = `
+        INSERT INTO lodge_reviews (tenant_id, lodge_id, rating, review_text)
+        VALUES ($1, $2, $3, $4)
+        RETURNING id, tenant_id, lodge_id, rating, review_text, review_date
+      `;
+      const values = [tenantId, lodgeId, rating, review_text || null];
+      const reviewResult = await pool.query(insertQuery, values);
+
+      res.status(201).json({
+        message: "Review submitted successfully",
+        review: reviewResult.rows[0],
+      });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Failed to submit review" });
+    }
+  }
+);
 export default router;

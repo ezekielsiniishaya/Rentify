@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { hash, compare } from "bcryptjs"; // Combined import for brevity
+import { hash, compare } from "bcryptjs";
 import { pool } from "../config/db.js";
 import { body, validationResult } from "express-validator";
 import pkg from "jsonwebtoken";
@@ -16,8 +16,7 @@ const router = Router();
 router.post(
   "/register",
   [
-    // Validate email
-    body("email").isEmail().withMessage("Valid email is required"),
+    body("name").notEmpty().withMessage("Name is required"),
     // Validate phone number
     body("phone_number")
       .notEmpty()
@@ -36,7 +35,7 @@ router.post(
         return res.status(400).json({ errors: errors.array() });
       }
 
-      const { email, phone_number, password } = req.body;
+      const { name, phone_number, password } = req.body;
 
       // Hash password
       const hashedPassword = await hash(password, 10);
@@ -44,12 +43,11 @@ router.post(
       // Insert tenant into database
       const query = `
         INSERT INTO tenants 
-        (email, phone_number, password)
+        (name, phone_number, password)
         VALUES ($1, $2, $3)
-        RETURNING id, name, email
-      `;
+        RETURNING id, name, phone_number, account_created     `;
 
-      const values = [email, phone_number, hashedPassword];
+      const values = [name, phone_number, hashedPassword];
 
       const result = await pool.query(query, values);
 
@@ -69,7 +67,9 @@ router.post(
   "/login",
   [
     // Validate email and password
-    body("email").isEmail().withMessage("Valid email is required"),
+    body("phone_number")
+      .isMobilePhone()
+      .withMessage("Valid phone number is required"),
     body("password").notEmpty().withMessage("Password is required"),
   ],
   async (req, res) => {
@@ -80,15 +80,15 @@ router.post(
         return res.status(400).json({ errors: errors.array() });
       }
 
-      const { email, password } = req.body;
+      const { phone_number, password } = req.body;
 
       // Find tenant by email
       const result = await pool.query(
-        "SELECT * FROM tenants WHERE email = $1",
-        [email]
+        "SELECT * FROM tenants WHERE phone_number = $1",
+        [phone_number]
       );
       if (result.rows.length === 0) {
-        return res.status(400).json({ error: "email does not exists" });
+        return res.status(400).json({ error: "phone number does not exists" });
       }
 
       const tenant = result.rows[0];
@@ -112,7 +112,7 @@ router.post(
         tenant: {
           id: tenant.id,
           name: tenant.name,
-          email: tenant.email,
+          phone_number: tenant.phone_number,
         },
       });
     } catch (err) {
