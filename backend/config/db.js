@@ -13,6 +13,7 @@ import createTenantFavoritesTable from "../tables/tenants_favorites.js";
 import createLodgesReviewsTable from "../tables/lodges_reviews.js";
 import createAdminTable from "../tables/admin.js";
 import createFeedbackTable from "../tables/feedback.js";
+import createAreasTable from "../tables/lodge_areas.js";
 
 // Create a new PostgreSQL connection pool using environment variables
 const pool = new Pool({
@@ -27,6 +28,7 @@ const pool = new Pool({
 async function createTables() {
   try {
     // Create each table in sequence
+    await createAreasTable(pool);
     await createLandlordTable(pool);
     await createTenantsTable(pool);
     await createLodgesTable(pool);

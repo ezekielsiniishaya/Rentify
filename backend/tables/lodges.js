@@ -12,6 +12,7 @@ const createLodgesTable = async (pool) => {
       capacity INTEGER NOT NULL,
       available_rooms INTEGER NOT NULL,
       verification_status BOOLEAN DEFAULT FALSE,
+      area_id INTEGER REFERENCES areas(id) ON DELETE SET NULL,
       display_status BOOLEAN DEFAULT TRUE,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP

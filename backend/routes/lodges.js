@@ -1,114 +1,147 @@
+// Imports
 import express from "express";
 import { body, validationResult } from "express-validator";
 import authMiddleware from "../middlewares/auth.js";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
-const memoryStorage = multer.memoryStorage();
-const lodgeUpload = multer({ storage: memoryStorage });
 import { pool } from "../config/db.js";
 import { deleteOldImage } from "../utils/upload.js";
 const router = express.Router();
-
+const memoryStorage = multer.memoryStorage();
+const lodgeUpload = multer({ storage: memoryStorage });
 // Add lodge route
-lodgeUpload.array("images", 10), // Use memory storage, save after validation
-  router.post(
-    "/add",
-    authMiddleware,
-    lodgeUpload.array("images", 10), // Allow multiple images uploaded with field name "images", max 10
-    [
-      // Validation for required fields
-      body("name").notEmpty().withMessage("Name is required"),
-      body("address").notEmpty().withMessage("Address is required"),
-      body("price")
-        .notEmpty()
-        .withMessage("Price is required")
-        .custom((value) => !isNaN(value) && Number(value) > 0)
-        .withMessage("Price must be a positive number"),
-      body("capacity")
-        .notEmpty()
-        .withMessage("Capacity is required")
-        .custom((value) => Number.isInteger(Number(value)) && Number(value) > 0)
-        .withMessage("Capacity must be a positive integer"),
-      body("available_rooms")
-        .notEmpty()
-        .withMessage("Available rooms is required")
-        .custom((value, { req }) => {
-          const rooms = Number(value);
-          const cap = Number(req.body.capacity);
-          return Number.isInteger(rooms) && rooms > 0 && (!cap || rooms <= cap);
-        })
-        .withMessage(
-          "Available rooms must be a positive integer not exceeding capacity"
-        ),
-    ],
-    async (req, res) => {
-      try {
-        // Check for validation errors
-        const errors = validationResult(req);
-        if (!errors.isEmpty()) {
-          return res.status(400).json({ errors: errors.array() });
-        }
-
-        const landlordId = req.user.id;
-        const { name, description, address, price, capacity, available_rooms } =
-          req.body;
-        // Prevent duplicate lodge names for same landlord
-        const existing = await pool.query(
-          `SELECT id FROM lodges WHERE landlord_id = $1 AND name = $2`,
-          [landlordId, name]
+router.post(
+  "/add",
+  authMiddleware,
+  lodgeUpload.array("images", 10), // Allow multiple images uploaded with field name "images", max 10
+  [
+    // Validation for required fields
+    body("name").notEmpty().withMessage("Name is required"),
+    body("address").notEmpty().withMessage("Address is required"),
+    body("area")
+      .notEmpty()
+      .withMessage("Area is required")
+      .custom(async (value) => {
+        // Check if area exists in lodge_areas table by name
+        const areaCheck = await pool.query(
+          "SELECT id FROM areas WHERE name = $1",
+          [value]
         );
-        if (existing.rows.length > 0) {
-          return res
-            .status(409)
-            .json({ error: "A lodge with this name already exists." });
+        if (areaCheck.rows.length === 0) {
+          throw new Error("Selected area does not exist");
         }
-        // Insert lodge into database
-        const lodgeQuery = `
+        return true;
+      }),
+    body("price")
+      .notEmpty()
+      .withMessage("Price is required")
+      .custom((value) => !isNaN(value) && Number(value) > 0)
+      .withMessage("Price must be a positive number"),
+    body("capacity")
+      .notEmpty()
+      .withMessage("Capacity is required")
+      .custom((value) => Number.isInteger(Number(value)) && Number(value) > 0)
+      .withMessage("Capacity must be a positive integer"),
+    body("available_rooms")
+      .notEmpty()
+      .withMessage("Available rooms is required")
+      .custom((value, { req }) => {
+        const rooms = Number(value);
+        const cap = Number(req.body.capacity);
+        return Number.isInteger(rooms) && rooms > 0 && (!cap || rooms <= cap);
+      })
+      .withMessage(
+        "Available rooms must be a positive integer not exceeding capacity"
+      ),
+  ],
+  async (req, res) => {
+    try {
+      // Check for validation errors
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const landlordId = req.user.id;
+      const {
+        name,
+        description,
+        address,
+        price,
+        capacity,
+        available_rooms,
+        area,
+      } = req.body;
+
+      // Prevent duplicate lodge names for same landlord
+      const existing = await pool.query(
+        `SELECT id FROM lodges WHERE landlord_id = $1 AND name = $2`,
+        [landlordId, name]
+      );
+      if (existing.rows.length > 0) {
+        return res
+          .status(409)
+          .json({ error: "A lodge with this name already exists." });
+      }
+
+      // Get area_id from lodge_areas by area name
+      const areaResult = await pool.query(
+        "SELECT id FROM areas WHERE name = $1",
+        [area]
+      );
+      if (areaResult.rows.length === 0) {
+        return res.status(400).json({ error: "Selected area does not exist" });
+      }
+      const area_id = areaResult.rows[0].id;
+
+      // Insert lodge into database, now including area_id
+      const lodgeQuery = `
         INSERT INTO lodges 
-        (landlord_id, name, description, address, price, capacity, available_rooms)
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        (landlord_id, name, description, address, price, capacity, available_rooms, area_id)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         RETURNING id, name
       `;
-        const lodgeValues = [
-          landlordId,
-          name,
-          description,
-          address,
-          price,
-          capacity,
-          available_rooms,
-        ];
-        const lodgeResult = await pool.query(lodgeQuery, lodgeValues);
-        const lodgeId = lodgeResult.rows[0].id;
+      const lodgeValues = [
+        landlordId,
+        name,
+        description,
+        address,
+        price,
+        capacity,
+        available_rooms,
+        area_id,
+      ];
+      const lodgeResult = await pool.query(lodgeQuery, lodgeValues);
+      const lodgeId = lodgeResult.rows[0].id;
 
-        // If images uploaded, save files to disk and URLs to DB
-        if (req.files && req.files.length > 0) {
-          const uploadDir = path.join(process.cwd(), "uploads", "lodges");
-          if (!fs.existsSync(uploadDir)) {
-            fs.mkdirSync(uploadDir, { recursive: true });
-          }
-          for (const file of req.files) {
-            const filename = `${Date.now()}_${file.originalname.replace(/\s+/g, "_")}`;
-            const filepath = path.join(uploadDir, filename);
-            fs.writeFileSync(filepath, file.buffer);
-            const imageUrl = `${req.protocol}://${req.get("host")}/uploads/lodges/${filename}`;
-            await pool.query(
-              `INSERT INTO lodge_images (lodge_id, image_url) VALUES ($1, $2)`,
-              [lodgeId, imageUrl]
-            );
-          }
+      // If images uploaded, save files to disk and URLs to DB
+      if (req.files && req.files.length > 0) {
+        const uploadDir = path.join(process.cwd(), "uploads", "lodges");
+        if (!fs.existsSync(uploadDir)) {
+          fs.mkdirSync(uploadDir, { recursive: true });
         }
-        res.status(201).json({
-          message: "Lodge created successfully",
-          lodge: lodgeResult.rows[0],
-        });
-      } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: "Failed to create lodge" });
+        for (const file of req.files) {
+          const filename = `${Date.now()}_${file.originalname.replace(/\s+/g, "_")}`;
+          const filepath = path.join(uploadDir, filename);
+          fs.writeFileSync(filepath, file.buffer);
+          const imageUrl = `${req.protocol}://${req.get("host")}/uploads/lodges/${filename}`;
+          await pool.query(
+            `INSERT INTO lodge_images (lodge_id, image_url) VALUES ($1, $2)`,
+            [lodgeId, imageUrl]
+          );
+        }
       }
+      res.status(201).json({
+        message: "Lodge created successfully",
+        lodge: lodgeResult.rows[0],
+      });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Failed to create lodge" });
     }
-  );
+  }
+);
 
 // GET BASIC LODGES (with minimal landlord info)
 router.get("/", authMiddleware, async (_, res) => {
@@ -185,6 +218,7 @@ router.get("/landlord/:landlordId", authMiddleware, async (req, res) => {
   }
 });
 
+// Get all VISIBLE lodge
 router.get("/visible", authMiddleware, async (_, res) => {
   try {
     const query = `
@@ -296,6 +330,20 @@ router.put(
     // Optional fields validation
     body("name").optional().notEmpty().withMessage("Name is required"),
     body("address").optional().notEmpty().withMessage("Address is required"),
+    body("area")
+      .optional()
+      .custom(async (value) => {
+        if (!value) return true;
+        // Check if area exists in areas table by name
+        const areaCheck = await pool.query(
+          "SELECT id FROM areas WHERE name = $1",
+          [value]
+        );
+        if (areaCheck.rows.length === 0) {
+          throw new Error("Selected area does not exist");
+        }
+        return true;
+      }),
     body("price")
       .optional()
       .custom((value) => !isNaN(value))
@@ -314,7 +362,7 @@ router.put(
     const landlordId = req.user.id;
 
     // Extract possible fields from body
-    const { name, description, address } = req.body;
+    const { name, description, address, area } = req.body;
     const price = req.body.price ? Number(req.body.price) : null;
     const capacity = req.body.capacity ? Number(req.body.capacity) : null;
     const available_rooms = req.body.available_rooms
@@ -387,6 +435,21 @@ router.put(
         }
       }
 
+      // If area is provided, get area_id
+      let area_id = null;
+      if (area) {
+        const areaResult = await pool.query(
+          "SELECT id FROM areas WHERE name = $1",
+          [area]
+        );
+        if (areaResult.rows.length === 0) {
+          return res
+            .status(400)
+            .json({ error: "Selected area does not exist" });
+        }
+        area_id = areaResult.rows[0].id;
+      }
+
       // Update lodge details (only fields provided)
       const updateQuery = `
         UPDATE lodges
@@ -396,6 +459,7 @@ router.put(
             price = COALESCE($4, price),
             capacity = COALESCE($5, capacity),
             available_rooms = COALESCE($6, available_rooms)
+            ${area ? ", area_id = $8" : ""}
         WHERE id = $7
         RETURNING *
       `;
@@ -408,6 +472,8 @@ router.put(
         available_rooms,
         lodgeId,
       ];
+      if (area) values.push(area_id);
+
       const result = await pool.query(updateQuery, values);
 
       // Respond with updated lodge info
@@ -472,6 +538,15 @@ router.patch("/:id/display", authMiddleware, async (req, res) => {
   const { status } = req.body;
 
   try {
+    // Check if lodge exists and belongs to the landlord
+    const check = await pool.query(
+      `SELECT id FROM lodges WHERE id = $1 AND landlord_id = $2`,
+      [lodgeId, req.user.id]
+    );
+    if (check.rowCount === 0) {
+      return res.status(404).json({ error: "Lodge not found or unauthorized" });
+    }
+
     // Update display status for lodge
     await pool.query(
       `UPDATE lodges SET display_status = $1 WHERE id = $2 AND landlord_id = $3`,
@@ -570,4 +645,87 @@ router.post(
     }
   }
 );
+
+// Remove from favorites
+router.delete("/:lodgeId/favorite", authMiddleware, async (req, res) => {
+  try {
+    const tenantId = req.user.id;
+    const lodgeId = parseInt(req.params.lodgeId, 10);
+
+    // Check if lodge exists
+    const lodgeResult = await pool.query(
+      "SELECT id FROM lodges WHERE id = $1",
+      [lodgeId]
+    );
+    if (lodgeResult.rows.length === 0) {
+      return res.status(404).json({ error: "Lodge not found" });
+    }
+
+    // Remove from favorites
+    await pool.query(
+      "DELETE FROM tenant_favorites WHERE tenant_id = $1 AND lodge_id = $2",
+      [tenantId, lodgeId]
+    );
+
+    res.status(200).json({ message: "Lodge removed from favorites" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to remove from favorites" });
+  }
+});
+
+// Search route
+router.get("/search", authMiddleware, async (req, res) => {
+  try {
+    const { area_id, min_price, max_price, name, min_rooms, max_rooms } =
+      req.query;
+    let query = `
+      SELECT 
+        l.id, l.name, l.description, l.address, l.price,
+        l.capacity, l.available_rooms, l.display_status, l.created_at,
+        COALESCE(
+          (SELECT json_agg(li.image_url)
+           FROM lodge_images li
+           WHERE li.lodge_id = l.id),
+          '[]'::json
+        ) AS images
+      FROM lodges l
+      WHERE l.display_status = true
+    `;
+    const params = [];
+    let idx = 1;
+
+    if (area_id) {
+      query += ` AND l.area_id = $${idx++}`;
+      params.push(area_id);
+    }
+    if (min_price) {
+      query += ` AND l.price >= $${idx++}`;
+      params.push(min_price);
+    }
+    if (max_price) {
+      query += ` AND l.price <= $${idx++}`;
+      params.push(max_price);
+    }
+    if (min_rooms) {
+      query += ` AND l.available_rooms >= $${idx++}`;
+      params.push(min_rooms);
+    }
+    if (max_rooms) {
+      query += ` AND l.available_rooms <= $${idx++}`;
+      params.push(max_rooms);
+    }
+    if (name) {
+      query += ` AND LOWER(l.name) LIKE $${idx++}`;
+      params.push(`%${name.toLowerCase()}%`);
+    }
+    query += " ORDER BY l.created_at DESC";
+
+    const result = await pool.query(query, params);
+    res.status(200).json({ lodges: result.rows });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to search lodges" });
+  }
+});
 export default router;

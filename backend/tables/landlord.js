@@ -12,10 +12,10 @@ const createLandlordTable = async (pool) => {
       profile_picture TEXT,
       address TEXT,
       gender VARCHAR(10),
+      language_preference VARCHAR(50),
       verification_status BOOLEAN DEFAULT FALSE,
       display_status BOOLEAN DEFAULT TRUE,
-      account_created TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      language_preference VARCHAR(50)
+      account_created TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
   `;
   await pool.query(query);
