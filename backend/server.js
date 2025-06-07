@@ -8,7 +8,7 @@ import { createTables } from "./config/db.js"; // Function to create DB tables i
 import landlordRoutes from "./routes/landlords.js"; // Routes for landlord-related operations
 import tenantRoutes from "./routes/tenants.js"; // Routes for tenant-related operations
 import lodgeRoutes from "./routes/lodges.js"; // Routes for lodge-related operations
-
+import feedbackRoute from "./routes/feedback.js"; // Routes for feedback operations
 // Initialize Express app
 const app = express();
 const PORT = 3000; // Port number where server will run
@@ -27,7 +27,7 @@ app.use(express.json());
 app.use("/api/landlords", landlordRoutes); // Handle requests starting with /api/landlord
 app.use("/api/tenants", tenantRoutes); // Handle requests starting with /api/tenant
 app.use("/api/lodges", lodgeRoutes); // Handle requests starting with /lodges
-
+app.use("/api/feedback", feedbackRoute); // Handle requests starting with /api/feedback
 // Function to start server after ensuring tables are created
 async function startServer() {
   try {

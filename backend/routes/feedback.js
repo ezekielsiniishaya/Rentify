@@ -1,6 +1,6 @@
-const express = require("express");
-const db = require("../db"); // adjust path as needed
-const { body, validationResult } = require("express-validator");
+import express from "express";
+import { pool } from "../config/db.js";
+import { body, validationResult } from "express-validator";
 
 // Feedback route
 const router = express.Router();
@@ -40,19 +40,19 @@ router.post(
 
     const query = `
             INSERT INTO feedbacks (name, email, phone, role, type, message)
-            VALUES (?, ?, ?, ?, ?, ?)
+            VALUES ($1, $2, $3, $4, $5, $6)
         `;
-    db.query(
-      query,
-      [name, email, phone, role, type, message],
-      (err, result) => {
-        if (err) {
-          return res.status(500).json({ error: "Database error." });
-        }
-        res.status(201).json({ message: "Thank you for your feedback!" });
+    pool.query(query, [name, email, phone, role, type, message], (err) => {
+      if (err) {
+        console.error("Database error:", err); // Log the actual error for debugging
+        // For debugging only: include error message in response (remove in production)
+        return res
+          .status(500)
+          .json({ error: "Database error.", details: err.message });
       }
-    );
+      res.status(201).json({ message: "Thank you for your feedback!" });
+    });
   }
 );
 
-module.exports = router;
+export default router;
