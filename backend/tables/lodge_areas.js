@@ -10,12 +10,10 @@ const createAreasTable = async (pool) => {
   const insertAreasQuery = `
       INSERT INTO areas (name)
       VALUES 
-        ('Campus'),
-        ('Town'),
-        ('University Gate'),
-        ('Behind Faculty'),
-        ('Phase 1'),
-        ('Phase 2')
+        ('gk'),
+        ('dama'),
+        ('school gate'),
+        ('gidan mongoro')
       ON CONFLICT (name) DO NOTHING
     `;
   await pool.query(insertAreasQuery);

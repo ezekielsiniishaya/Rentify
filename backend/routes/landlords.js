@@ -175,7 +175,7 @@ router.get("/profile", authMiddleware, async (req, res) => {
 
     // Fetch landlord profile
     const landlordResult = await pool.query(
-      `SELECT id, email, phone_number, account_created, address,
+      `SELECT id, email, phone_number, phone_number_2, account_created, address,
       display_status, gender, name, language_preference,
       profile_picture, verification_status
       FROM landlords
@@ -338,11 +338,9 @@ router.put(
 );
 
 // POST /api/landlords/logout
-router.post("/logout", (res) => {
-  // Token deletion should be handled on the frontend
+router.post("/logout", (req, res) => {
   res.status(200).json({
     message: "Logout successful",
   });
 });
-
 export default router;
