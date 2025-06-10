@@ -2,7 +2,7 @@
 import express from "express";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
-
+import cors from "cors";
 // Import custom modules
 import { createTables } from "./config/db.js"; // Function to create DB tables if they don't exist
 import landlordRoutes from "./routes/landlords.js"; // Routes for landlord-related operations
@@ -13,8 +13,14 @@ import adminRoutes from "./routes/admin.js";
 
 // Initialize Express app
 const app = express();
-const PORT = 3000; // Port number where server will run
-
+const PORT = 5000; // Port number where server will run
+// Addding cors for frontend
+app.use(
+  cors({
+    origin: "http://localhost:3000",
+    credentials: true, // only if you're using cookies/sessions
+  })
+);
 // Set up __dirname in ES module context
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -31,17 +37,18 @@ app.use("/api/tenants", tenantRoutes); // Handle requests starting with /api/ten
 app.use("/api/lodges", lodgeRoutes); // Handle requests starting with /lodges
 app.use("/api/feedback", feedbackRoute); // Handle requests starting with /api/feedback
 app.use("/api/admin", adminRoutes);
+
 // Function to start server after ensuring tables are created
 async function startServer() {
-    try {
-        await createTables(); // Ensure necessary database tables are ready
-        app.listen(PORT, () => {
-            console.log(`Server running at http://localhost:${PORT}`);
-        });
-    } catch (err) {
-        console.error("Failed to start server:", err);
-        process.exit(1); // Exit process with error code
-    }
+  try {
+    await createTables(); // Ensure necessary database tables are ready
+    app.listen(PORT, () => {
+      console.log(`Server running at http://localhost:${PORT}`);
+    });
+  } catch (err) {
+    console.error("Failed to start server:", err);
+    process.exit(1); // Exit process with error code
+  }
 }
 
 // Run the server
