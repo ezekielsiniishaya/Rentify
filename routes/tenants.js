@@ -42,10 +42,10 @@ router.post(
 
       // Insert tenant into database
       const query = `
-        INSERT INTO tenants 
-        (name, phone_number, password)
-        VALUES ($1, $2, $3)
-        RETURNING id, name, phone_number, account_created     `;
+      INSERT INTO tenants 
+      (name, phone_number, password)
+      VALUES ($1, $2, $3)
+      RETURNING id, name, phone_number, account_created`;
 
       const values = [name, phone_number, hashedPassword];
 
@@ -57,7 +57,7 @@ router.post(
       });
     } catch (err) {
       console.error(err);
-      res.status(500).json({ error: "Registration failed" });
+      res.status(400).json({ error: err.detail || "Registration failed" });
     }
   }
 );
@@ -160,7 +160,5 @@ router.get("/profile", authMiddleware, async (req, res) => {
     res.status(500).json({ error: "Failed to fetch profile" });
   }
 });
-
-
 
 export default router;
