@@ -57,7 +57,13 @@ router.post(
       });
     } catch (err) {
       console.error(err);
-      res.status(400).json({ error: err.detail || "Registration failed" });
+
+      // Handle specific error for duplicate phone number
+      if (err.code === "23505") {
+        return res.status(400).json({ error: "Phone number already exists" });
+      }
+
+      res.status(400).json({ error: "Registration failed" });
     }
   }
 );
