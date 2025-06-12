@@ -14,3 +14,4 @@ If you can't afford SMS APIs now, consider:
     Letting users register but restricting certain actions (e.g., lodge creation, feedback, editing profiles) until manual admin verification or SMS integration is ready.
 
     Add a "verified" badge later once true verification is in place.
+feedback button for logged in users

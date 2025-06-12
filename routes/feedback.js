@@ -21,7 +21,7 @@ router.post(
       .optional()
       .isEmail()
       .withMessage("A valid email is required."),
-    body("phone").optional().isString(),
+    body("phone_number").optional().isString(),
     body("name").optional().isString(),
   ],
   (req, res) => {
@@ -32,26 +32,30 @@ router.post(
     const {
       name = null,
       email = null,
-      phone = null,
+      phone_number = null,
       role = "unknown",
       type,
       message,
     } = req.body;
 
     const query = `
-            INSERT INTO feedbacks (name, email, phone, role, type, message)
+            INSERT INTO feedbacks (name, email, phone_number, role, type, message)
             VALUES ($1, $2, $3, $4, $5, $6)
         `;
-    pool.query(query, [name, email, phone, role, type, message], (err) => {
-      if (err) {
-        console.error("Database error:", err); // Log the actual error for debugging
-        // For debugging only: include error message in response (remove in production)
-        return res
-          .status(500)
-          .json({ error: "Database error.", details: err.message });
+    pool.query(
+      query,
+      [name, email, phone_number, role, type, message],
+      (err) => {
+        if (err) {
+          console.error("Database error:", err); // Log the actual error for debugging
+          // For debugging only: include error message in response (remove in production)
+          return res
+            .status(500)
+            .json({ error: "Database error.", details: err.message });
+        }
+        res.status(201).json({ message: "Thank you for your feedback!" });
       }
-      res.status(201).json({ message: "Thank you for your feedback!" });
-    });
+    );
   }
 );
 
