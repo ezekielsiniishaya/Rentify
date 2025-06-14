@@ -1,25 +1,14 @@
 // Imports
 import express from "express";
-import {
-  body,
-  validationResult
-} from "express-validator";
+import { body, validationResult } from "express-validator";
 import authMiddleware from "../middlewares/auth.js";
-import multer from "multer";
-import path from "path";
-import fs from "fs";
-import {
-  pool
-} from "../config/db.js";
-import {
-  deleteOldImage
-} from "../utils/upload.js";
+import superbase from "../config/supabase.js";
+import { deleteOldImage } from "../utils/upload.js";
+import { lodgeUpload } from "../utils/upload.js";
+
 const router = express.Router();
-const memoryStorage = multer.memoryStorage();
-const lodgeUpload = multer( {
-  storage: memoryStorage
-});
-// Add lodge route
+
+// Add lodge route (using Supabase)
 router.post(
   "/add",
   authMiddleware,
@@ -29,42 +18,41 @@ router.post(
     body("name").notEmpty().withMessage("Name is required"),
     body("address").notEmpty().withMessage("Address is required"),
     body("area")
-    .notEmpty()
-    .withMessage("Area is required")
-    .custom(async (value) => {
-      // Check if area exists in lodge_areas table by name
-      const areaCheck = await pool.query(
-        "SELECT id FROM areas WHERE name = $1",
-        [value]
-      );
-      if (areaCheck.rows.length === 0) {
-        throw new Error("Selected area does not exist");
-      }
-      return true;
-    }),
+      .notEmpty()
+      .withMessage("Area is required")
+      .custom(async (value) => {
+        // Check if area exists in areas table by name
+        const { data, error } = await superbase
+          .from("areas")
+          .select("id")
+          .eq("name", value)
+          .single();
+        if (error || !data) {
+          throw new Error("Selected area does not exist");
+        }
+        return true;
+      }),
     body("price")
-    .notEmpty()
-    .withMessage("Price is required")
-    .custom((value) => !isNaN(value) && Number(value) > 0)
-    .withMessage("Price must be a positive number"),
+      .notEmpty()
+      .withMessage("Price is required")
+      .custom((value) => !isNaN(value) && Number(value) > 0)
+      .withMessage("Price must be a positive number"),
     body("capacity")
-    .notEmpty()
-    .withMessage("Capacity is required")
-    .custom((value) => Number.isInteger(Number(value)) && Number(value) > 0)
-    .withMessage("Capacity must be a positive integer"),
+      .notEmpty()
+      .withMessage("Capacity is required")
+      .custom((value) => Number.isInteger(Number(value)) && Number(value) > 0)
+      .withMessage("Capacity must be a positive integer"),
     body("available_rooms")
-    .notEmpty()
-    .withMessage("Available rooms is required")
-    .custom((value, {
-      req
-    }) => {
-      const rooms = Number(value);
-      const cap = Number(req.body.capacity);
-      return Number.isInteger(rooms) && rooms > 0 && (!cap || rooms <= cap);
-    })
-    .withMessage(
-      "Available rooms must be a positive integer not exceeding capacity"
-    ),
+      .notEmpty()
+      .withMessage("Available rooms is required")
+      .custom((value, { req }) => {
+        const rooms = Number(value);
+        const cap = Number(req.body.capacity);
+        return Number.isInteger(rooms) && rooms > 0 && (!cap || rooms <= cap);
+      })
+      .withMessage(
+        "Available rooms must be a positive integer not exceeding capacity"
+      ),
   ],
   async (req, res) => {
     try {
@@ -72,7 +60,7 @@ router.post(
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
         return res.status(400).json({
-          errors: errors.array()
+          errors: errors.array(),
         });
       }
 
@@ -88,739 +76,764 @@ router.post(
       } = req.body;
 
       // Prevent duplicate lodge names for same landlord
-      const existing = await pool.query(
-        `SELECT id FROM lodges WHERE landlord_id = $1 AND name = $2`,
-        [landlordId, name]
-      );
-      if (existing.rows.length > 0) {
-        return res
-        .status(409)
-        .json({
-          error: "A lodge with this name already exists."
+      const { data: existing, error: existingError } = await superbase
+        .from("lodges")
+        .select("id")
+        .eq("landlord_id", landlordId)
+        .eq("name", name)
+        .maybeSingle();
+      if (existing) {
+        return res.status(409).json({
+          error: "A lodge with this name already exists.",
         });
       }
 
-      // Get area_id from lodge_areas by area name
-      const areaResult = await pool.query(
-        "SELECT id FROM areas WHERE name = $1",
-        [area]
-      );
-      if (areaResult.rows.length === 0) {
+      // Get area_id from areas by area name
+      const { data: areaData, error: areaError } = await superbase
+        .from("areas")
+        .select("id")
+        .eq("name", area)
+        .single();
+      if (areaError || !areaData) {
         return res.status(400).json({
-          error: "Selected area does not exist"
+          error: "Selected area does not exist",
         });
       }
-      const area_id = areaResult.rows[0].id;
+      const area_id = areaData.id;
 
       // Insert lodge into database, now including area_id
-      const lodgeQuery = `
-      INSERT INTO lodges
-      (landlord_id, name, description, address, price, capacity, available_rooms, area_id)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-      RETURNING id, name
-      `;
-      const lodgeValues = [
-        landlordId,
-        name,
-        description,
-        address,
-        price,
-        capacity,
-        available_rooms,
-        area_id,
-      ];
-      const lodgeResult = await pool.query(lodgeQuery, lodgeValues);
-      const lodgeId = lodgeResult.rows[0].id;
+      const { data: lodgeData, error: lodgeError } = await superbase
+        .from("lodges")
+        .insert([
+          {
+            landlord_id: landlordId,
+            name,
+            description,
+            address,
+            price,
+            capacity,
+            available_rooms,
+            area_id,
+          },
+        ])
+        .select("id, name")
+        .single();
+      if (lodgeError) {
+        return res.status(500).json({
+          error: "Failed to create lodge",
+        });
+      }
+      const lodgeId = lodgeData.id;
 
-      // If images uploaded, save files to disk and URLs to DB
+      // If images uploaded, save files to cloudinary
       if (req.files && req.files.length > 0) {
-        const uploadDir = path.join(process.cwd(), "uploads", "lodges");
-        if (!fs.existsSync(uploadDir)) {
-          fs.mkdirSync(uploadDir, {
-            recursive: true
-          });
-        }
         for (const file of req.files) {
-          const filename = `${Date.now()}_${file.originalname.replace(/\s+/g, "_")}`;
-          const filepath = path.join(uploadDir, filename);
-          fs.writeFileSync(filepath, file.buffer);
-          const imageUrl = `${req.protocol}://${req.get("host")}/uploads/lodges/${filename}`;
-          await pool.query(
-            `INSERT INTO lodge_images (lodge_id, image_url) VALUES ($1, $2)`,
-            [lodgeId, imageUrl]
-          );
+          const imageUrl = file.path;
+          await superbase
+            .from("lodge_images")
+            .insert([{ lodge_id: lodgeId, image_url: imageUrl }]);
         }
       }
+
       res.status(201).json({
         message: "Lodge created successfully",
-        lodge: lodgeResult.rows[0],
+        lodge: lodgeData,
       });
     } catch (err) {
       console.error(err);
       res.status(500).json({
-        error: "Failed to create lodge"
+        error: "Failed to create lodge",
       });
     }
   }
 );
-// Search route
+// Search route (Supabase version)
 router.get("/search", authMiddleware, async (req, res) => {
   try {
     const { area_id, min_price, max_price, name, min_rooms, max_rooms } =
       req.query;
-    let query = `
-      SELECT 
-        l.id, l.name, l.description, l.address, l.price,
-        l.capacity, l.available_rooms, l.display_status, l.created_at,
-        COALESCE(
-          (SELECT json_agg(li.image_url)
-           FROM lodge_images li
-           WHERE li.lodge_id = l.id),
-          '[]'::json
-        ) AS images
-      FROM lodges l
-      WHERE l.display_status = true
-    `;
-    const params = [];
-    let idx = 1;
 
-    if (area_id) {
-      query += ` AND l.area_id = $${idx++}`;
-      params.push(area_id);
-    }
-    if (min_price) {
-      query += ` AND l.price >= $${idx++}`;
-      params.push(min_price);
-    }
-    if (max_price) {
-      query += ` AND l.price <= $${idx++}`;
-      params.push(max_price);
-    }
-    if (min_rooms) {
-      query += ` AND l.available_rooms >= $${idx++}`;
-      params.push(min_rooms);
-    }
-    if (max_rooms) {
-      query += ` AND l.available_rooms <= $${idx++}`;
-      params.push(max_rooms);
-    }
-    if (name) {
-      query += ` AND LOWER(l.name) LIKE $${idx++}`;
-      params.push(`%${name.toLowerCase()}%`);
-    }
-    query += " ORDER BY l.created_at DESC";
+    let query = superbase
+      .from("lodges")
+      .select(
+        `
+        id, name, description, address, price, capacity, available_rooms, display_status, created_at,
+        lodge_images:image_url[]
+        `
+      )
+      .eq("display_status", true);
 
-    const result = await pool.query(query, params);
-    res.status(200).json({ lodges: result.rows });
+    if (area_id) query = query.eq("area_id", area_id);
+    if (min_price) query = query.gte("price", min_price);
+    if (max_price) query = query.lte("price", max_price);
+    if (min_rooms) query = query.gte("available_rooms", min_rooms);
+    if (max_rooms) query = query.lte("available_rooms", max_rooms);
+    if (name) query = query.ilike("name", `%${name}%`);
+
+    const { data, error } = await query.order("created_at", {
+      ascending: false,
+    });
+
+    if (error) {
+      console.error(error);
+      return res.status(500).json({ error: "Failed to search lodges" });
+    }
+
+    // If you want to flatten images to an array of URLs:
+    const lodges = (data || []).map((lodge) => ({
+      ...lodge,
+      images: Array.isArray(lodge.lodge_images)
+        ? lodge.lodge_images.map((img) => img.image_url || img)
+        : [],
+    }));
+
+    res.status(200).json({ lodges });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to search lodges" });
   }
 });
-// GET BASIC LODGES (with minimal landlord info)
+// GET BASIC LODGES (with minimal landlord info) - Supabase version
 router.get("/", authMiddleware, async (_, res) => {
   try {
-    // Fetch all lodges with landlord info and images
-    const lodgesResult = await pool.query(
-      `SELECT
-      l.id, l.name, l.description, l.address, l.price,
-      l.capacity, l.available_rooms, l.display_status,
-      json_build_object(
-      'id', ld.id,
-      'name', ld.name,
-      'profile_picture', ld.profile_picture,
-      'verification_status', ld.verification_status
-      ) AS landlord,
-      COALESCE(
-      (SELECT json_agg(li.image_url)
-      FROM lodge_images li
-      WHERE li.lodge_id = l.id),
-      '[]'::json
-      ) AS images
-      FROM lodges l
-      JOIN landlords ld ON l.landlord_id = ld.id
-      WHERE l.display_status = true`
-    );
+    // Fetch all lodges with landlord info and images using Supabase
+    const { data, error } = await superbase
+      .from("lodges")
+      .select(
+        `
+        id, name, description, address, price, capacity, available_rooms, display_status,
+        landlord:landlord_id (
+          id, name, profile_picture, verification_status
+        ),
+        lodge_images:image_url[]
+        `
+      )
+      .eq("display_status", true);
+
+    if (error) {
+      console.error(error);
+      return res.status(500).json({ error: "Failed to fetch lodges" });
+    }
+
+    // Flatten images to array of URLs
+    const lodges = (data || []).map((lodge) => ({
+      ...lodge,
+      images: Array.isArray(lodge.lodge_images)
+        ? lodge.lodge_images.map((img) => img.image_url || img)
+        : [],
+    }));
 
     res.status(200).json({
-      lodges: lodgesResult.rows
+      lodges,
     });
   } catch (err) {
     console.error(err);
     res.status(500).json({
-      error: "Failed to fetch lodges"
+      error: "Failed to fetch lodges",
     });
   }
 });
 
-// GET ALL LODGES BY LANDLORD ID
+// GET ALL LODGES BY LANDLORD ID (Supabase version)
 router.get("/landlord/:landlordId", authMiddleware, async (req, res) => {
   try {
-    const {
-      landlordId
-    } = req.params;
+    const { landlordId } = req.params;
 
     // Get landlord info
-    const landlordResult = await pool.query(
-      `SELECT id, name, email, phone_number, profile_picture,
-      verification_status, account_created
-      FROM landlords
-      WHERE id = $1`,
-      [landlordId]
-    );
+    const { data: landlord, error: landlordError } = await superbase
+      .from("landlords")
+      .select(
+        "id, name, email, phone_number, profile_picture, verification_status, account_created"
+      )
+      .eq("id", landlordId)
+      .single();
 
-    if (landlordResult.rows.length === 0) {
+    if (landlordError || !landlord) {
       return res.status(404).json({
-        error: "Landlord not found"
+        error: "Landlord not found",
       });
     }
 
     // Get all lodges with images for this landlord
-    const lodgesResult = await pool.query(
-      `SELECT l.*,
-      COALESCE(
-      (SELECT json_agg(li.image_url)
-      FROM lodge_images li
-      WHERE li.lodge_id = l.id),
-      '[]'::json
-      ) AS images
-      FROM lodges l
-      WHERE l.landlord_id = $1
-      AND l.display_status = true`,
-      [landlordId]
-    );
+    const { data: lodges, error: lodgesError } = await superbase
+      .from("lodges")
+      .select(
+        `
+        *,
+        lodge_images:image_url[]
+      `
+      )
+      .eq("landlord_id", landlordId)
+      .eq("display_status", true);
 
-    res.status(200).json({
-      landlord: landlordResult.rows[0],
-      lodges: lodgesResult.rows,
-    });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({
-      error: "Failed to fetch landlord lodges"
-    });
-  }
-});
+    if (lodgesError) {
+      console.error(lodgesError);
+      return res.status(500).json({
+        error: "Failed to fetch landlord lodges",
+      });
+    }
 
-// Get all VISIBLE lodge
-router.get("/visible", authMiddleware, async (_, res) => {
-  try {
-    const query = `
-    SELECT
-    l.id,
-    l.name,
-    l.description,
-    l.address,
-    l.price,
-    l.capacity,
-    l.available_rooms,
-    l.created_at,
-    COALESCE(json_agg(
-    json_build_object(
-    'url', li.image_url,
-    'is_primary', li.is_primary
-    )
-    ORDER BY li.is_primary DESC, li.id
-    ) FILTER (WHERE li.id IS NOT NULL), '[]') AS images
-    FROM lodges l
-    LEFT JOIN lodge_images li ON l.id = li.lodge_id
-    WHERE l.display_status = true
-    GROUP BY l.id
-    ORDER BY l.created_at DESC;
-    `;
-
-    const result = await pool.query(query);
-
-    // Reformat images to plain array of URLs with primary first
-    const lodges = result.rows.map((lodge) => ({
+    // Flatten images to array of URLs
+    const lodgesWithImages = (lodges || []).map((lodge) => ({
       ...lodge,
-      images: lodge.images.map((img) => img.url),
+      images: Array.isArray(lodge.lodge_images)
+        ? lodge.lodge_images.map((img) => img.image_url || img)
+        : [],
     }));
 
     res.status(200).json({
-      lodges
+      landlord,
+      lodges: lodgesWithImages,
     });
   } catch (err) {
     console.error(err);
     res.status(500).json({
-      error: "Failed to fetch visible lodges"
+      error: "Failed to fetch landlord lodges",
     });
   }
 });
 
-// GET /:id — get full lodge details, landlord info, images, and reviews
+// Get all VISIBLE lodges (Supabase version)
+router.get("/visible", authMiddleware, async (_, res) => {
+  try {
+    // Fetch all visible lodges with images (primary first if available)
+    const { data, error } = await superbase
+      .from("lodges")
+      .select(
+        `
+        id, name, description, address, price, capacity, available_rooms, created_at,
+        lodge_images:image_url(*)
+        `
+      )
+      .eq("display_status", true)
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      console.error(error);
+      return res.status(500).json({ error: "Failed to fetch visible lodges" });
+    }
+
+    // Reformat images: sort by is_primary DESC, id ASC, then map to URLs
+    const lodges = (data || []).map((lodge) => ({
+      ...lodge,
+      images: Array.isArray(lodge.lodge_images)
+        ? lodge.lodge_images
+            .sort((a, b) => {
+              // Sort by is_primary DESC, then id ASC
+              if ((b.is_primary ? 1 : 0) !== (a.is_primary ? 1 : 0)) {
+                return (b.is_primary ? 1 : 0) - (a.is_primary ? 1 : 0);
+              }
+              return (a.id || 0) - (b.id || 0);
+            })
+            .map((img) => img.image_url)
+        : [],
+    }));
+
+    res.status(200).json({
+      lodges,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({
+      error: "Failed to fetch visible lodges",
+    });
+  }
+});
+
+// GET /:id — get full lodge details, landlord info, images, and reviews (Supabase version)
 router.get("/:id", authMiddleware, async (req, res) => {
   const lodgeId = req.params.id;
 
   try {
     // Fetch lodge details with landlord info and images
-    const lodgeResult = await pool.query(
-      `SELECT
-      l.id, l.name, l.description, l.address, l.price,
-      l.capacity, l.available_rooms, l.display_status, l.created_at,
-      json_build_object(
-      'id', ld.id,
-      'name', ld.name,
-      'profile_picture', ld.profile_picture,
-      'verification_status', ld.verification_status,
-      'email', ld.email,
-      'phone_number', ld.phone_number
-      ) AS landlord,
-      COALESCE(
-      (SELECT json_agg(li.image_url)
-      FROM lodge_images li
-      WHERE li.lodge_id = l.id),
-      '[]'::json
-      ) AS images
-      FROM lodges l
-      JOIN landlords ld ON l.landlord_id = ld.id
-      WHERE l.id = $1 AND l.display_status = true`,
-      [lodgeId]
-    );
+    const { data: lodge, error: lodgeError } = await superbase
+      .from("lodges")
+      .select(
+        `
+        id, name, description, address, price, capacity, available_rooms, display_status, created_at,
+        landlord:landlord_id (
+          id, name, profile_picture, verification_status, email, phone_number
+        ),
+        lodge_images:image_url[]
+        `
+      )
+      .eq("id", lodgeId)
+      .eq("display_status", true)
+      .maybeSingle();
 
-    if (lodgeResult.rows.length === 0) {
+    if (lodgeError || !lodge) {
       return res.status(404).json({
-        error: "Lodge not found or unavailable"
+        error: "Lodge not found or unavailable",
       });
     }
 
     // Fetch reviews for the lodge (with tenant info)
-    const reviewsResult = await pool.query(
-      `SELECT
-      r.id, r.rating, r.review_text, r.review_date,
-      json_build_object(
-      'id', t.id,
-      'name', t.name
-      ) AS tenant
-      FROM lodge_reviews r
-      JOIN tenants t ON r.tenant_id = t.id
-      WHERE r.lodge_id = $1
-      ORDER BY r.review_date DESC`,
-      [lodgeId]
-    );
+    const { data: reviews, error: reviewsError } = await superbase
+      .from("lodge_reviews")
+      .select(
+        `
+        id, rating, review_text, review_date,
+        tenant:tenant_id (
+          id, name
+        )
+        `
+      )
+      .eq("lodge_id", lodgeId)
+      .order("review_date", { ascending: false });
+
+    if (reviewsError) {
+      console.error(reviewsError);
+      return res.status(500).json({
+        error: "Failed to fetch lodge reviews",
+      });
+    }
 
     res.status(200).json({
       lodge: {
-        ...lodgeResult.rows[0],
-        reviews: reviewsResult.rows,
+        ...lodge,
+        images: Array.isArray(lodge.lodge_images)
+          ? lodge.lodge_images.map((img) => img.image_url || img)
+          : [],
+        reviews: reviews || [],
       },
     });
   } catch (err) {
     console.error(err);
     res.status(500).json({
-      error: "Failed to fetch lodge details"
+      error: "Failed to fetch lodge details",
     });
   }
 });
 
-// UPDATE LODGE
+// UPDATE LODGE (Supabase version)
 router.put(
   "/:id",
   authMiddleware,
-  lodgeUpload.array("images", 10), // Allow multiple images uploaded with field name "images", max 10
+  lodgeUpload.array("images", 10),
   [
-    // Optional fields validation
     body("name").optional().notEmpty().withMessage("Name is required"),
     body("address").optional().notEmpty().withMessage("Address is required"),
     body("area")
-    .optional()
-    .custom(async (value) => {
-      if (!value) return true;
-      // Check if area exists in areas table by name
-      const areaCheck = await pool.query(
-        "SELECT id FROM areas WHERE name = $1",
-        [value]
-      );
-      if (areaCheck.rows.length === 0) {
-        throw new Error("Selected area does not exist");
-      }
-      return true;
-    }),
+      .optional()
+      .custom(async (value) => {
+        if (!value) return true;
+        const { data, error } = await superbase
+          .from("areas")
+          .select("id")
+          .eq("name", value)
+          .single();
+        if (error || !data) throw new Error("Selected area does not exist");
+        return true;
+      }),
     body("price")
-    .optional()
-    .custom((value) => !isNaN(value))
-    .withMessage("Price must be a number"),
+      .optional()
+      .custom((value) => !isNaN(value))
+      .withMessage("Price must be a number"),
     body("capacity")
-    .optional()
-    .custom((value) => Number.isInteger(Number(value)) && Number(value) > 0)
-    .withMessage("Capacity must be a positive integer"),
+      .optional()
+      .custom((value) => Number.isInteger(Number(value)) && Number(value) > 0)
+      .withMessage("Capacity must be a positive integer"),
     body("available_rooms")
-    .optional()
-    .custom((value) => Number.isInteger(Number(value)) && Number(value) > 0)
-    .withMessage("Available rooms must be a positive integer"),
+      .optional()
+      .custom((value) => Number.isInteger(Number(value)) && Number(value) > 0)
+      .withMessage("Available rooms must be a positive integer"),
   ],
   async (req, res) => {
     const lodgeId = req.params.id;
     const landlordId = req.user.id;
 
-    // Extract possible fields from body
-    const {
-      name, description, address, area
-    } = req.body;
-    const price = req.body.price ? Number(req.body.price): null;
-    const capacity = req.body.capacity ? Number(req.body.capacity): null;
+    const { name, description, address, area } = req.body;
+    const price = req.body.price ? Number(req.body.price) : undefined;
+    const capacity = req.body.capacity ? Number(req.body.capacity) : undefined;
     const available_rooms = req.body.available_rooms
-    ? Number(req.body.available_rooms): null;
+      ? Number(req.body.available_rooms)
+      : undefined;
 
     try {
-      // Validate input fields
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        return res.status(400).json({
-          errors: errors.array()
-        });
+        return res.status(400).json({ errors: errors.array() });
       }
 
-      // Verify the lodge belongs to the authenticated landlord
-      const check = await pool.query(
-        `SELECT id FROM lodges WHERE id = $1 AND landlord_id = $2`,
-        [lodgeId, landlordId]
-      );
-      if (check.rowCount === 0) {
+      const { data: lodgeCheck, error: lodgeCheckError } = await superbase
+        .from("lodges")
+        .select("id")
+        .eq("id", lodgeId)
+        .eq("landlord_id", landlordId)
+        .maybeSingle();
+      if (lodgeCheckError || !lodgeCheck) {
         return res
-        .status(403)
-        .json({
-          error: "Unauthorized or lodge not found"
-        });
+          .status(403)
+          .json({ error: "Unauthorized or lodge not found" });
       }
 
-      // Check if the updated name conflicts with other lodges of the landlord
       if (name) {
-        const conflict = await pool.query(
-          `SELECT id FROM lodges WHERE landlord_id = $1 AND name = $2 AND id <> $3`,
-          [landlordId, name, lodgeId]
-        );
-        if (conflict.rowCount > 0) {
-          return res
-          .status(409)
-          .json({
-            error: "A lodge with this name already exists."
+        const { data: conflict } = await superbase
+          .from("lodges")
+          .select("id")
+          .eq("landlord_id", landlordId)
+          .eq("name", name)
+          .neq("id", lodgeId)
+          .maybeSingle();
+        if (conflict) {
+          return res.status(409).json({
+            error: "A lodge with this name already exists.",
           });
         }
       }
 
-      // Parse imagesToDelete from request body (should be JSON stringified array)
       const imagesToDelete = req.body.imagesToDelete
-      ? JSON.parse(req.body.imagesToDelete): [];
+        ? JSON.parse(req.body.imagesToDelete)
+        : [];
 
-      // Delete old images as requested
+      // 🗑️ Delete old images from Cloudinary and Supabase
       for (const imageUrl of imagesToDelete) {
-        // Delete the image file from storage
-        deleteOldImage(imageUrl, "lodge");
-
-        // Delete the image record from the database
-        await pool.query(
-          `DELETE FROM lodge_images WHERE lodge_id = $1 AND image_url = $2`,
-          [lodgeId, imageUrl]
-        );
+        await deleteOldImage(imageUrl); // cloudinary public_id must be extracted inside this function
+        await superbase
+          .from("lodge_images")
+          .delete()
+          .eq("lodge_id", lodgeId)
+          .eq("image_url", imageUrl);
       }
 
-      // Insert new uploaded images (if any)
+      // 📤 Upload new images to Supabase (Cloudinary already handled storage)
       if (req.files && req.files.length > 0) {
-        const uploadDir = path.join(process.cwd(), "uploads", "lodges");
-        if (!fs.existsSync(uploadDir)) {
-          fs.mkdirSync(uploadDir, {
-            recursive: true
-          });
-        }
         for (const file of req.files) {
-          const filename = `${Date.now()}_${file.originalname.replace(/\s+/g, "_")}`;
-          const filepath = path.join(uploadDir, filename);
-          fs.writeFileSync(filepath, file.buffer);
-          const imageUrl = `${req.protocol}://${req.get("host")}/uploads/lodges/${filename}`;
-          await pool.query(
-            `INSERT INTO lodge_images (lodge_id, image_url) VALUES ($1, $2)`,
-            [lodgeId, imageUrl]
-          );
+          await superbase
+            .from("lodge_images")
+            .insert([{ lodge_id: lodgeId, image_url: file.path }]); // file.path is Cloudinary URL
         }
       }
 
-      // If area is provided, get area_id
-      let area_id = null;
+      // 📌 Convert area name to ID if provided
+      let area_id;
       if (area) {
-        const areaResult = await pool.query(
-          "SELECT id FROM areas WHERE name = $1",
-          [area]
-        );
-        if (areaResult.rows.length === 0) {
+        const { data: areaData, error: areaError } = await superbase
+          .from("areas")
+          .select("id")
+          .eq("name", area)
+          .single();
+        if (areaError || !areaData) {
           return res
-          .status(400)
-          .json({
-            error: "Selected area does not exist"
-          });
+            .status(400)
+            .json({ error: "Selected area does not exist" });
         }
-        area_id = areaResult.rows[0].id;
+        area_id = areaData.id;
       }
 
-      // Update lodge details (only fields provided)
-      const updateQuery = `
-      UPDATE lodges
-      SET name = COALESCE($1, name),
-      description = COALESCE($2, description),
-      address = COALESCE($3, address),
-      price = COALESCE($4, price),
-      capacity = COALESCE($5, capacity),
-      available_rooms = COALESCE($6, available_rooms)
-      ${area ? ", area_id = $8": ""}
-      WHERE id = $7
-      RETURNING *
-      `;
-      const values = [
-        name,
-        description,
-        address,
-        price,
-        capacity,
-        available_rooms,
-        lodgeId,
-      ];
-      if (area) values.push(area_id);
+      const updateObj = {};
+      if (name !== undefined) updateObj.name = name;
+      if (description !== undefined) updateObj.description = description;
+      if (address !== undefined) updateObj.address = address;
+      if (price !== undefined) updateObj.price = price;
+      if (capacity !== undefined) updateObj.capacity = capacity;
+      if (available_rooms !== undefined)
+        updateObj.available_rooms = available_rooms;
+      if (area_id !== undefined) updateObj.area_id = area_id;
 
-      const result = await pool.query(updateQuery, values);
+      const { data: updated, error: updateError } = await superbase
+        .from("lodges")
+        .update(updateObj)
+        .eq("id", lodgeId)
+        .select("*")
+        .single();
 
-      // Respond with updated lodge info
+      if (updateError) {
+        return res.status(500).json({ error: "Failed to update lodge" });
+      }
+
       res.status(200).json({
-        message: "Lodge updated", lodge: result.rows[0]
+        message: "Lodge updated",
+        lodge: updated,
       });
     } catch (err) {
       console.error(err);
-      res.status(500).json({
-        error: "Failed to update lodge"
-      });
+      res.status(500).json({ error: "Failed to update lodge" });
     }
   }
 );
 
-// DELETE LODGE
+// DELETE LODGE (Supabase version)
 router.delete("/:id", authMiddleware, async (req, res) => {
   const lodgeId = req.params.id;
   const landlordId = req.user.id;
 
   try {
-    // Check ownership
-    const check = await pool.query(
-      `SELECT id FROM lodges WHERE id = $1 AND landlord_id = $2`,
-      [lodgeId, landlordId]
-    );
-    if (check.rowCount === 0) {
-      return res.status(403).json({
-        error: "Unauthorized or lodge not found"
-      });
+    // Confirm ownership
+    const { data: check, error: checkError } = await superbase
+      .from("lodges")
+      .select("id")
+      .eq("id", lodgeId)
+      .eq("landlord_id", landlordId)
+      .maybeSingle();
+    if (checkError || !check) {
+      return res.status(403).json({ error: "Unauthorized or lodge not found" });
     }
 
-    // Delete images first if needed (optional cleanup)
-    await pool.query(`DELETE FROM lodge_images WHERE lodge_id = $1`, [lodgeId]);
+    // 🔍 Fetch all images first (to delete from Cloudinary)
+    const { data: images } = await superbase
+      .from("lodge_images")
+      .select("image_url")
+      .eq("lodge_id", lodgeId);
 
-    // Delete lodge
-    await pool.query(`DELETE FROM lodges WHERE id = $1`, [lodgeId]);
+    // 🗑️ Delete each image from Cloudinary
+    if (images && images.length > 0) {
+      for (const { image_url } of images) {
+        await deleteOldImage(image_url, "lodge"); // your util should handle public_id extraction
+      }
+    }
 
-    res.status(200).json({
-      message: "Lodge deleted"
-    });
+    // 🧹 Clean up DB
+    await superbase.from("lodge_images").delete().eq("lodge_id", lodgeId);
+    await superbase.from("lodges").delete().eq("id", lodgeId);
+
+    res.status(200).json({ message: "Lodge deleted" });
   } catch (err) {
     console.error(err);
-    res.status(500).json({
-      error: "Failed to delete lodge"
-    });
+    res.status(500).json({ error: "Failed to delete lodge" });
   }
 });
 
-// Get all lodges (visible)
+// Get all lodges (visible) - Supabase version
 router.get("/visible", authMiddleware, async (_, res) => {
   try {
-    // Fetch all visible lodges with one image (if any)
-    const query = `
-    SELECT l.id, l.name, l.description, l.address, l.price, l.capacity, l.available_rooms, l.created_at,
-    i.image_url
-    FROM lodges l
-    LEFT JOIN lodge_images i ON l.id = i.lodge_id
-    WHERE l.display_status = true
-    `;
-    const result = await pool.query(query);
-    res.status(200).json({
-      lodges: result.rows
-    });
+    // Fetch all visible lodges with images (primary first if available)
+    const { data, error } = await superbase
+      .from("lodges")
+      .select(
+        `
+        id, name, description, address, price, capacity, available_rooms, created_at,
+        lodge_images:image_url(*)
+        `
+      )
+      .eq("display_status", true)
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      console.error(error);
+      return res.status(500).json({ error: "Failed to fetch visible lodges" });
+    }
+
+    // Reformat images: sort by is_primary DESC, id ASC, then map to URLs
+    const lodges = (data || []).map((lodge) => ({
+      ...lodge,
+      images: Array.isArray(lodge.lodge_images)
+        ? lodge.lodge_images
+            .sort((a, b) => {
+              if ((b.is_primary ? 1 : 0) !== (a.is_primary ? 1 : 0)) {
+                return (b.is_primary ? 1 : 0) - (a.is_primary ? 1 : 0);
+              }
+              return (a.id || 0) - (b.id || 0);
+            })
+            .map((img) => img.image_url)
+        : [],
+    }));
+
+    res.status(200).json({ lodges });
   } catch (err) {
     console.error(err);
-    res.status(500).json({
-      error: "Failed to fetch visible lodges"
-    });
+    res.status(500).json({ error: "Failed to fetch visible lodges" });
   }
 });
 
-// Display status toggle route
+// Display status toggle route (Supabase version)
 router.patch("/:id/display", authMiddleware, async (req, res) => {
   const lodgeId = req.params.id;
-  const {
-    status
-  } = req.body;
+  const { status } = req.body;
+  const landlordId = req.user.id;
 
   try {
     // Check if lodge exists and belongs to the landlord
-    const check = await pool.query(
-      `SELECT id FROM lodges WHERE id = $1 AND landlord_id = $2`,
-      [lodgeId, req.user.id]
-    );
-    if (check.rowCount === 0) {
+    const { data: check, error: checkError } = await superbase
+      .from("lodges")
+      .select("id")
+      .eq("id", lodgeId)
+      .eq("landlord_id", landlordId)
+      .maybeSingle();
+
+    if (checkError || !check) {
       return res.status(404).json({
-        error: "Lodge not found or unauthorized"
+        error: "Lodge not found or unauthorized",
       });
     }
 
     // Update display status for lodge
-    await pool.query(
-      `UPDATE lodges SET display_status = $1 WHERE id = $2 AND landlord_id = $3`,
-      [status, lodgeId, req.user.id]
-    );
+    const { error: updateError } = await superbase
+      .from("lodges")
+      .update({ display_status: status })
+      .eq("id", lodgeId)
+      .eq("landlord_id", landlordId);
+
+    if (updateError) {
+      throw updateError;
+    }
+
     res.json({
-      message: `Lodge ${status ? "shown": "hidden"}`
+      message: `Lodge ${status ? "shown" : "hidden"}`,
     });
   } catch (err) {
     console.error(err);
     res.status(500).json({
-      error: "Failed to update lodge visibility"
+      error: "Failed to update lodge visibility",
     });
   }
 });
 
-// Add lodge to favorite route
+// Add lodge to favorite route (Supabase version)
 router.post("/:lodgeId/favorite", authMiddleware, async (req, res) => {
   try {
     const tenantId = req.user.id;
     const lodgeId = req.params.lodgeId;
 
     // Check if lodge exists
-    const lodgeResult = await pool.query(
-      "SELECT id FROM lodges WHERE id = $1",
-      [lodgeId]
-    );
-    if (lodgeResult.rows.length === 0) {
+    const { data: lodge, error: lodgeError } = await superbase
+      .from("lodges")
+      .select("id")
+      .eq("id", lodgeId)
+      .maybeSingle();
+
+    if (lodgeError || !lodge) {
       return res.status(404).json({
-        error: "Lodge not found"
+        error: "Lodge not found",
       });
     }
 
     // Add lodge to favorite
-    const insertQuery = `
-    INSERT INTO tenant_favorites (tenant_id, lodge_id)
-    VALUES ($1, $2)
-    RETURNING id, tenant_id, lodge_id
-    `;
-    const values = [tenantId,
-      lodgeId];
-    const favoriteResult = await pool.query(insertQuery, values);
+    const { data: favorite, error: favError } = await superbase
+      .from("tenant_favorites")
+      .insert([{ tenant_id: tenantId, lodge_id: lodgeId }])
+      .select("id, tenant_id, lodge_id")
+      .single();
+
+    if (favError) {
+      throw favError;
+    }
 
     res.status(201).json({
       message: "favorite lodge added successfully",
-      result: favoriteResult.rows[0],
+      result: favorite,
     });
   } catch (err) {
     console.error(err);
     res.status(500).json({
-      error: "Failed to add lodge to favorite"
+      error: "Failed to add lodge to favorite",
     });
   }
 });
-// Lodge review route
+
+// Lodge review route (Supabase version)
 router.post(
   "/:lodgeId/reviews",
   authMiddleware,
   [
     body("rating")
-    .isInt({
-      min: 1, max: 5
-    })
-    .withMessage("Rating must be between 1 and 5"),
+      .isInt({
+        min: 1,
+        max: 5,
+      })
+      .withMessage("Rating must be between 1 and 5"),
     body("review_text")
-    .optional()
-    .isString()
-    .isLength({
-      max: 500
-    })
-    .withMessage("Comment must be at most 500 characters"),
+      .optional()
+      .isString()
+      .isLength({
+        max: 500,
+      })
+      .withMessage("Comment must be at most 500 characters"),
   ],
   async (req, res) => {
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
         return res.status(400).json({
-          errors: errors.array()
+          errors: errors.array(),
         });
       }
 
       const tenantId = req.user.id;
       const lodgeId = req.params.lodgeId;
-      const {
-        rating,
-        review_text
-      } = req.body;
+      const { rating, review_text } = req.body;
 
       // Check if lodge exists
-      const lodgeResult = await pool.query(
-        "SELECT id FROM lodges WHERE id = $1",
-        [lodgeId]
-      );
-      if (lodgeResult.rows.length === 0) {
+      const { data: lodge, error: lodgeError } = await superbase
+        .from("lodges")
+        .select("id")
+        .eq("id", lodgeId)
+        .maybeSingle();
+
+      if (lodgeError || !lodge) {
         return res.status(404).json({
-          error: "Lodge not found"
+          error: "Lodge not found",
         });
       }
 
       // Insert review
-      const insertQuery = `
-      INSERT INTO lodge_reviews (tenant_id, lodge_id, rating, review_text)
-      VALUES ($1, $2, $3, $4)
-      RETURNING id, tenant_id, lodge_id, rating, review_text, review_date
-      `;
-      const values = [tenantId,
-        lodgeId,
-        rating,
-        review_text || null];
-      const reviewResult = await pool.query(insertQuery, values);
+      const { data: review, error: reviewError } = await superbase
+        .from("lodge_reviews")
+        .insert([
+          {
+            tenant_id: tenantId,
+            lodge_id: lodgeId,
+            rating,
+            review_text: review_text || null,
+          },
+        ])
+        .select("id, tenant_id, lodge_id, rating, review_text, review_date")
+        .single();
+
+      if (reviewError) {
+        throw reviewError;
+      }
 
       res.status(201).json({
         message: "Review submitted successfully",
-        review: reviewResult.rows[0],
+        review,
       });
     } catch (err) {
       console.error(err);
       res.status(500).json({
-        error: "Failed to submit review"
+        error: "Failed to submit review",
       });
     }
   }
 );
 
-// Remove from favorites
+// Remove from favorites (Supabase version)
 router.delete("/:lodgeId/favorite", authMiddleware, async (req, res) => {
   try {
     const tenantId = req.user.id;
     const lodgeId = parseInt(req.params.lodgeId, 10);
 
     // Check if lodge exists
-    const lodgeResult = await pool.query(
-      "SELECT id FROM lodges WHERE id = $1",
-      [lodgeId]
-    );
-    if (lodgeResult.rows.length === 0) {
+    const { data: lodge, error: lodgeError } = await superbase
+      .from("lodges")
+      .select("id")
+      .eq("id", lodgeId)
+      .maybeSingle();
+
+    if (lodgeError || !lodge) {
       return res.status(404).json({
-        error: "Lodge not found"
+        error: "Lodge not found",
       });
     }
 
     // Remove from favorites
-    await pool.query(
-      "DELETE FROM tenant_favorites WHERE tenant_id = $1 AND lodge_id = $2",
-      [tenantId, lodgeId]
-    );
+    const { error: delError } = await superbase
+      .from("tenant_favorites")
+      .delete()
+      .eq("tenant_id", tenantId)
+      .eq("lodge_id", lodgeId);
+
+    if (delError) {
+      throw delError;
+    }
 
     res.status(200).json({
-      message: "Lodge removed from favorites"
+      message: "Lodge removed from favorites",
     });
   } catch (err) {
     console.error(err);
     res.status(500).json({
-      error: "Failed to remove from favorites"
+      error: "Failed to remove from favorites",
     });
   }
 });

@@ -1,55 +1,53 @@
+// server.js
+
 // Import necessary modules
 import express from "express";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import cors from "cors";
-// Import custom modules
-import { createTables } from "./config/db.js"; // Function to create DB tables if they don't exist
-import landlordRoutes from "./routes/landlords.js"; // Routes for landlord-related operations
-import tenantRoutes from "./routes/tenants.js"; // Routes for tenant-related operations
-import lodgeRoutes from "./routes/lodges.js"; // Routes for lodge-related operations
-import feedbackRoute from "./routes/feedback.js"; // Routes for feedback operations
+import dotenv from "dotenv";
+dotenv.config();
+
+// Import Supabase (just initializes client)
+import supabase from "./config/supabase.js";
+
+// Import custom route modules
+import landlordRoutes from "./routes/landlords.js";
+import tenantRoutes from "./routes/tenants.js";
+import lodgeRoutes from "./routes/lodges.js";
+import feedbackRoute from "./routes/feedback.js";
 import adminRoutes from "./routes/admin.js";
 
 // Initialize Express app
 const app = express();
-const PORT = 5000; // Port number where server will run
-// Addding cors for frontend
+const PORT = process.env.PORT || 5000;
+
+// Enable CORS
 app.use(
   cors({
-    origin: "http://localhost:3000",
-    credentials: true, // only if you're using cookies/sessions
+    origin: "https://rentify-ng.netlify.app",
+    credentials: true,
   })
 );
+
 // Set up __dirname in ES module context
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// Serve static image files from 'uploads' directory
+// Serve static files (e.g., image uploads)
 app.use("/uploads", express.static(join(__dirname, "uploads")));
 
-// Middleware to parse JSON request bodies
+// Middleware to parse JSON
 app.use(express.json());
 
 // API route handlers
-app.use("/api/landlords", landlordRoutes); // Handle requests starting with /api/landlord
-app.use("/api/tenants", tenantRoutes); // Handle requests starting with /api/tenant
-app.use("/api/lodges", lodgeRoutes); // Handle requests starting with /lodges
-app.use("/api/feedback", feedbackRoute); // Handle requests starting with /api/feedback
+app.use("/api/landlords", landlordRoutes);
+app.use("/api/tenants", tenantRoutes);
+app.use("/api/lodges", lodgeRoutes);
+app.use("/api/feedback", feedbackRoute);
 app.use("/api/admin", adminRoutes);
 
-// Function to start server after ensuring tables are created
-async function startServer() {
-  try {
-    await createTables(); // Ensure necessary database tables are ready
-    app.listen(PORT, () => {
-      console.log(`Server running at http://localhost:${PORT}`);
-    });
-  } catch (err) {
-    console.error("Failed to start server:", err);
-    process.exit(1); // Exit process with error code
-  }
-}
-
-// Run the server
-startServer();
+// Start the server
+app.listen(PORT, () => {
+  console.log(`✅ Server running at http://localhost:${PORT}`);
+});

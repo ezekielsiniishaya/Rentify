@@ -1,11 +1,11 @@
 import { Router } from "express";
 import { hash, compare } from "bcryptjs";
 import { landlordUpload } from "../utils/upload.js";
-import { pool } from "../config/db.js";
 import { body, validationResult } from "express-validator";
 import authMiddleware from "../middlewares/auth.js";
 import pkg from "jsonwebtoken";
-import { deleteOldImage } from "../utils/upload.js"; // Adjust path as needed
+import { deleteOldImage } from "../utils/upload.js";
+import supabase from "../config/supabase.js";
 import dotenv from "dotenv";
 dotenv.config();
 
@@ -15,7 +15,6 @@ const router = Router();
 // POST /api/landlords/register
 router.post(
   "/register",
-  // Validate user input
   [
     body("email").isEmail().withMessage("Valid email is required"),
     body("phone_number")
@@ -24,77 +23,74 @@ router.post(
       .isMobilePhone()
       .withMessage("Valid phone number required"),
     body("password")
-      .isLength({
-        min: 6,
-      })
+      .isLength({ min: 6 })
       .withMessage("Password must be at least 6 characters"),
   ],
   async (req, res) => {
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        return res.status(400).json({
-          errors: errors.array(),
-        });
+        return res.status(400).json({ errors: errors.array() });
       }
 
       const { email, phone_number, password } = req.body;
 
-      // Check if landlord already exists by email or phone number
-      const exists = await pool.query(
-        "SELECT id, email, phone_number FROM landlords WHERE email = $1 OR phone_number = $2",
-        [email, phone_number]
-      );
-      if (exists.rows.length > 0) {
-        const existing = exists.rows[0];
+      const { data: existingLandlords, error: existingError } = await supabase
+        .from("landlords")
+        .select("id, email, phone_number")
+        .or(`email.eq.${email},phone_number.eq.${phone_number}`);
+
+      if (existingError) {
+        return res
+          .status(500)
+          .json({ error: "Database error: " + existingError.message });
+      }
+      if (existingLandlords && existingLandlords.length > 0) {
+        const existing = existingLandlords[0];
         let errorMsg = "Account already registered";
-        if (existing.email === email) {
+        if (existing.email === req.body.email) {
           errorMsg = "Email already registered";
-        } else if (existing.phone_number === phone_number) {
+        } else if (existing.phone_number === req.body.phone_number) {
           errorMsg = "Phone number already registered";
         }
-        return res.status(400).json({
-          error: errorMsg,
-        });
+        return res.status(400).json({ error: errorMsg });
       }
 
-      // Hash password
       const hashedPassword = await hash(password, 10);
 
-      // Insert landlord into database
-      const query = `
-      INSERT INTO landlords
-      (email, phone_number, password)
-      VALUES ($1, $2, $3)
-      RETURNING id, email
-      `;
+      const { data, error } = await supabase
+        .from("landlords")
+        .insert([
+          {
+            email,
+            phone_number,
+            password: hashedPassword,
+          },
+        ])
+        .select("id, email");
 
-      const values = [email, phone_number, hashedPassword];
-
-      const result = await pool.query(query, values);
+      if (error) {
+        return res
+          .status(500)
+          .json({ error: "Database error: " + error.message });
+      }
 
       res.status(201).json({
         message: "Registration successful",
-        landlord: result.rows[0],
+        landlord: data && data.length > 0 ? data[0] : null,
       });
     } catch (err) {
       console.error(err);
-      // Check for unique constraint violation
       if (err.code === "23505") {
-        // Postgres unique_violation
         let errorMsg = "Duplicate entry";
         if (err.detail && err.detail.includes("email")) {
           errorMsg = "Email already registered";
         } else if (err.detail && err.detail.includes("phone_number")) {
           errorMsg = "Phone number already registered";
         }
-        return res.status(400).json({
-          error: errorMsg,
-        });
+        return res.status(400).json({ error: errorMsg });
       }
-      res.status(500).json({
-        error: "Registration failed: " + err.message,
-      });
+      res.status(500).json({ error: "Registration failed: " + err.message });
     }
   }
 );
@@ -110,44 +106,30 @@ router.post(
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        return res.status(400).json({
-          errors: errors.array(),
-        });
+        return res.status(400).json({ errors: errors.array() });
       }
 
       const { email, password } = req.body;
 
-      // Check if landlord exists
-      const result = await pool.query(
-        "SELECT * FROM landlords WHERE email = $1",
-        [email]
-      );
-      if (result.rows.length === 0) {
-        return res.status(400).json({
-          error: "Email does not exist",
-        });
+      const { data: landlord, error } = await supabase
+        .from("landlords")
+        .select("*")
+        .eq("email", email)
+        .maybeSingle();
+
+      if (error || !landlord) {
+        return res.status(400).json({ error: "Email does not exist" });
       }
 
-      const landlord = result.rows[0];
-
-      // Check password
       const isMatch = await compare(password, landlord.password);
       if (!isMatch) {
-        return res.status(400).json({
-          error: "Wrong password",
-        });
+        return res.status(400).json({ error: "Wrong password" });
       }
 
-      // Generate JWT token
       const token = sign(
-        {
-          id: landlord.id,
-          role: "landlord",
-        },
+        { id: landlord.id, role: "landlord" },
         process.env.JWT_SECRET,
-        {
-          expiresIn: "7d",
-        }
+        { expiresIn: "7d" }
       );
 
       res.status(200).json({
@@ -161,9 +143,7 @@ router.post(
       });
     } catch (err) {
       console.error(err);
-      res.status(500).json({
-        error: "Login failed",
-      });
+      res.status(500).json({ error: "Login failed" });
     }
   }
 );
@@ -174,74 +154,70 @@ router.get("/profile", authMiddleware, async (req, res) => {
     const landlordId = req.user.id;
 
     // Fetch landlord profile
-    const landlordResult = await pool.query(
-      `SELECT id, email, phone_number, phone_number_2, account_created, address,
-      display_status, gender, name, language_preference,
-      profile_picture, verification_status
-      FROM landlords
-      WHERE id = $1`,
-      [landlordId]
-    );
+    const { data: landlord, error: landlordError } = await supabase
+      .from("landlords")
+      .select(
+        "id, email, phone_number, phone_number_2, account_created, address, display_status, gender, name, language_preference, profile_picture, verification_status"
+      )
+      .eq("id", landlordId)
+      .maybeSingle();
 
-    if (landlordResult.rows.length === 0) {
-      return res.status(404).json({
-        error: "Landlord not found",
-      });
+    if (landlordError || !landlord) {
+      return res.status(404).json({ error: "Landlord not found" });
     }
 
     // Fetch lodges owned by the landlord
-    const lodgesResult = await pool.query(
-      `SELECT id, name, description, address, price,
-      capacity, available_rooms, verification_status,
-      display_status, created_at
-      FROM lodges
-      WHERE landlord_id = $1`,
-      [landlordId]
-    );
+    const { data: lodges, error: lodgesError } = await supabase
+      .from("lodges")
+      .select(
+        "id, name, description, address, price, capacity, available_rooms, verification_status, display_status, created_at"
+      )
+      .eq("landlord_id", landlordId);
 
-    const lodges = await Promise.all(
-      lodgesResult.rows.map(async (lodge) => {
-        // Fetch images for this lodge
-        const imagesResult = await pool.query(
-          `SELECT image_url FROM lodge_images WHERE lodge_id = $1`,
-          [lodge.id]
-        );
+    if (lodgesError) {
+      return res.status(500).json({ error: "Failed to fetch lodges" });
+    }
 
-        // Fetch reviews for this lodge
-        const reviewsResult = await pool.query(
-          `SELECT r.id, r.rating, r.review_text, r.review_date,
-          json_build_object('id', t.id, 'name', t.name) AS tenant
-          FROM lodge_reviews r
-          JOIN tenants t ON r.tenant_id = t.id
-          WHERE r.lodge_id = $1
-          ORDER BY r.review_date DESC`,
-          [lodge.id]
-        );
+    // For each lodge, fetch images and reviews
+    const lodgesWithDetails = await Promise.all(
+      (lodges || []).map(async (lodge) => {
+        // Images
+        const { data: images } = await supabase
+          .from("lodge_images")
+          .select("image_url")
+          .eq("lodge_id", lodge.id);
+
+        // Reviews
+        const { data: reviews } = await supabase
+          .from("lodge_reviews")
+          .select(
+            "id, rating, review_text, review_date, tenant:tenant_id(id, name)"
+          )
+          .eq("lodge_id", lodge.id)
+          .order("review_date", { ascending: false });
 
         return {
           ...lodge,
-          images: imagesResult.rows.map((row) => row.image_url),
-          reviews: reviewsResult.rows,
+          images: (images || []).map((row) => row.image_url),
+          reviews: reviews || [],
         };
       })
     );
 
-    const landlord = {
-      ...landlordResult.rows[0],
-      lodges,
-    };
-
     res.status(200).json({
-      landlord,
+      landlord: {
+        ...landlord,
+        lodges: lodgesWithDetails,
+      },
     });
   } catch (err) {
     console.error(err);
-    res.status(500).json({
-      error: "Failed to fetch profile",
-    });
+    res.status(500).json({ error: "Failed to fetch profile" });
   }
 });
+
 // PUT /api/landlords/profile
+
 router.put(
   "/profile",
   authMiddleware,
@@ -264,27 +240,31 @@ router.put(
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        return res.status(400).json({
-          errors: errors.array(),
-        });
+        return res.status(400).json({ errors: errors.array() });
       }
-      // Handle profile picture upload
-      if (req.file) {
-        const { rows } = await pool.query(
-          "SELECT profile_picture FROM landlords WHERE id = $1",
-          [req.user.id]
-        );
-        const oldImageUrl = rows[0]?.profile_picture;
 
-        if (oldImageUrl) {
-          deleteOldImage(oldImageUrl, "landlord"); // Remove old image if exists
+      let profile_picture;
+
+      if (req.file && req.file.path) {
+        profile_picture = req.file.path; // Cloudinary secure URL
+
+        // Get old image
+        const { data: landlord } = await supabase
+          .from("landlords")
+          .select("profile_picture")
+          .eq("id", req.user.id)
+          .maybeSingle();
+
+        const oldImageUrl = landlord?.profile_picture;
+
+        // 🧼 Delete previous image from Cloudinary
+        if (oldImageUrl && oldImageUrl.includes("res.cloudinary.com")) {
+          await deleteOldImage(oldImageUrl); // Calls cloudinary.uploader.destroy
         }
-
-        const imageUrl = `${req.protocol}://${req.get("host")}/uploads/landlords/${req.file.filename}`;
-        req.body.profile_picture = imageUrl;
       }
-      const landlordId = req.user.id;
-      const fields = [
+
+      const updateFields = {};
+      [
         "phone_number",
         "phone_number_2",
         "name",
@@ -292,47 +272,40 @@ router.put(
         "gender",
         "language_preference",
         "display_status",
-        "profile_picture",
-      ];
-      const updates = [];
-      const values = [];
-      let idx = 1;
-
-      // Build update query dynamically
-      for (const field of fields) {
+      ].forEach((field) => {
         if (req.body[field] !== undefined) {
-          updates.push(`${field} = $${idx}`);
-          values.push(req.body[field]);
-          idx++;
+          updateFields[field] = req.body[field];
         }
+      });
+
+      if (profile_picture) {
+        updateFields.profile_picture = profile_picture;
       }
 
-      if (updates.length === 0) {
-        return res.status(400).json({
-          error: "No fields to update",
-        });
+      if (Object.keys(updateFields).length === 0) {
+        return res.status(400).json({ error: "No fields to update" });
       }
 
-      values.push(landlordId);
+      const { data, error } = await supabase
+        .from("landlords")
+        .update(updateFields)
+        .eq("id", req.user.id)
+        .select(
+          "phone_number, phone_number_2, address, gender, name, language_preference, profile_picture"
+        )
+        .maybeSingle();
 
-      const query = `
-      UPDATE landlords
-      SET ${updates.join(", ")}
-      WHERE id = $${idx}
-      RETURNING phone_number,phone_number_2, address, gender, name, language_preference, profile_picture
-      `;
-
-      const result = await pool.query(query, values);
+      if (error) {
+        return res.status(500).json({ error: "Failed to update profile" });
+      }
 
       res.status(200).json({
         message: "Profile updated successfully",
-        landlord: result.rows[0],
+        landlord: data,
       });
     } catch (err) {
       console.error(err);
-      res.status(500).json({
-        error: "Failed to update profile",
-      });
+      res.status(500).json({ error: "Failed to update profile" });
     }
   }
 );
@@ -343,4 +316,5 @@ router.post("/logout", (req, res) => {
     message: "Logout successful",
   });
 });
+
 export default router;

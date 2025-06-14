@@ -1,6 +1,6 @@
 import express from "express";
 import { body, validationResult } from "express-validator";
-import { pool } from "../config/db.js";
+import supabase from "../config/supabase.js";
 import authMiddleware, { adminMiddleware } from "../middlewares/auth.js";
 import { hash, compare } from "bcryptjs";
 import pkg from "jsonwebtoken";
@@ -8,9 +8,10 @@ const { sign } = pkg;
 const router = express.Router();
 
 // Utility: Pagination
-function paginate(query, { page = 1, limit = 10 }) {
-  const offset = (page - 1) * limit;
-  return `${query} LIMIT ${limit} OFFSET ${offset}`;
+function paginate(page = 1, limit = 10) {
+  const from = (page - 1) * limit;
+  const to = from + limit - 1;
+  return { from, to };
 }
 
 // Admin Login
@@ -27,13 +28,17 @@ router.post(
 
     const { email, password } = req.body;
     try {
-      const result = await pool.query("SELECT * FROM admins WHERE email = $1", [
-        email,
-      ]);
-      if (result.rows.length === 0)
+      const { data: admins, error } = await supabase
+        .from("admins")
+        .select("*")
+        .eq("email", email)
+        .limit(1);
+
+      if (error) throw error;
+      if (!admins || admins.length === 0)
         return res.status(400).json({ error: "Invalid credentials" });
 
-      const admin = result.rows[0];
+      const admin = admins[0];
       const isMatch = await compare(password, admin.password_hash);
       if (!isMatch) return res.status(400).json({ error: "Wrong password" });
 
@@ -76,14 +81,74 @@ router.post(
     const { username, email, password } = req.body;
     try {
       const hashed = await hash(password, 10);
-      await pool.query(
-        "INSERT INTO admins (username, email, password_hash) VALUES ($1, $2, $3)",
-        [username, email, hashed]
-      );
+      const { error } = await supabase
+        .from("admins")
+        .insert([{ username, email, password_hash: hashed }]);
+      if (error) throw error;
       res.json({ message: "Admin created successfully" });
     } catch (err) {
       console.error(err);
       res.status(500).json({ error: "Failed to create admin" });
+    }
+  }
+);
+// Change admin password
+router.put(
+  "/admins/:id/password",
+  authMiddleware,
+  adminMiddleware,
+  [
+    body("password")
+      .isLength({ min: 6 })
+      .withMessage("New password must be at least 6 characters"),
+  ],
+  async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty())
+      return res.status(400).json({ errors: errors.array() });
+
+    const { id } = req.params;
+    const { password } = req.body;
+
+    try {
+      const hashed = await hash(password, 10);
+      const { error } = await supabase
+        .from("admins")
+        .update({ password_hash: hashed })
+        .eq("id", id);
+
+      if (error) throw error;
+      res.json({ message: "Password updated successfully" });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Failed to update password" });
+    }
+  }
+);
+
+// Delete an admin
+router.delete(
+  "/admins/:id",
+  authMiddleware,
+  adminMiddleware,
+  async (req, res) => {
+    const { id } = req.params;
+
+    // Prevent admin from deleting themselves
+    if (parseInt(id) === req.user.id) {
+      return res
+        .status(403)
+        .json({ error: "You cannot delete your own admin account." });
+    }
+
+    try {
+      const { error } = await supabase.from("admins").delete().eq("id", id);
+
+      if (error) throw error;
+      res.json({ message: "Admin deleted successfully" });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Failed to delete admin" });
     }
   }
 );
@@ -93,16 +158,16 @@ router.get("/dashboard", authMiddleware, adminMiddleware, async (req, res) => {
   try {
     const [tenantCount, landlordCount, lodgeCount, feedbackCount] =
       await Promise.all([
-        pool.query("SELECT COUNT(*) FROM tenants"),
-        pool.query("SELECT COUNT(*) FROM landlords"),
-        pool.query("SELECT COUNT(*) FROM lodges"),
-        pool.query("SELECT COUNT(*) FROM feedbacks"),
+        supabase.from("tenants").select("id", { count: "exact", head: true }),
+        supabase.from("landlords").select("id", { count: "exact", head: true }),
+        supabase.from("lodges").select("id", { count: "exact", head: true }),
+        supabase.from("feedbacks").select("id", { count: "exact", head: true }),
       ]);
     res.json({
-      tenants: Number(tenantCount.rows[0].count),
-      landlords: Number(landlordCount.rows[0].count),
-      lodges: Number(lodgeCount.rows[0].count),
-      feedbacks: Number(feedbackCount.rows[0].count),
+      tenants: tenantCount.count || 0,
+      landlords: landlordCount.count || 0,
+      lodges: lodgeCount.count || 0,
+      feedbacks: feedbackCount.count || 0,
     });
   } catch (err) {
     console.error(err);
@@ -114,18 +179,25 @@ router.get("/dashboard", authMiddleware, adminMiddleware, async (req, res) => {
 router.get("/tenants", authMiddleware, adminMiddleware, async (req, res) => {
   const page = parseInt(req.query.page) || 1;
   const limit = parseInt(req.query.limit) || 10;
+  const { from, to } = paginate(page, limit);
   try {
-    const totalRes = await pool.query("SELECT COUNT(*) FROM tenants");
-    const query = paginate(
-      "SELECT id, name, phone_number, account_created FROM tenants ORDER BY id ASC",
-      { page, limit }
-    );
-    const tenants = await pool.query(query);
+    const { count, error: countError } = await supabase
+      .from("tenants")
+      .select("id", { count: "exact", head: true });
+    if (countError) throw countError;
+
+    const { data: tenants, error } = await supabase
+      .from("tenants")
+      .select("id, name, phone_number, account_created")
+      .order("id", { ascending: true })
+      .range(from, to);
+
+    if (error) throw error;
     res.json({
       page,
       limit,
-      total: Number(totalRes.rows[0].count),
-      tenants: tenants.rows,
+      total: count || 0,
+      tenants,
     });
   } catch (err) {
     console.error(err);
@@ -137,18 +209,27 @@ router.get("/tenants", authMiddleware, adminMiddleware, async (req, res) => {
 router.get("/landlords", authMiddleware, adminMiddleware, async (req, res) => {
   const page = parseInt(req.query.page) || 1;
   const limit = parseInt(req.query.limit) || 10;
+  const { from, to } = paginate(page, limit);
   try {
-    const totalRes = await pool.query("SELECT COUNT(*) FROM landlords");
-    const query = paginate(
-      "SELECT id, name, email, phone_number, phone_number_2, verification_status, account_created FROM landlords ORDER BY id ASC",
-      { page, limit }
-    );
-    const landlords = await pool.query(query);
+    const { count, error: countError } = await supabase
+      .from("landlords")
+      .select("id", { count: "exact", head: true });
+    if (countError) throw countError;
+
+    const { data: landlords, error } = await supabase
+      .from("landlords")
+      .select(
+        "id, name, email, phone_number, phone_number_2, verification_status, account_created"
+      )
+      .order("id", { ascending: true })
+      .range(from, to);
+
+    if (error) throw error;
     res.json({
       page,
       limit,
-      total: Number(totalRes.rows[0].count),
-      landlords: landlords.rows,
+      total: count || 0,
+      landlords,
     });
   } catch (err) {
     console.error(err);
@@ -164,14 +245,21 @@ router.delete(
   async (req, res) => {
     try {
       const tenantId = req.params.id;
-      const result = await pool.query("SELECT * FROM tenants WHERE id = $1", [
-        tenantId,
-      ]);
-      if (result.rows.length === 0) {
+      const { data, error: selectError } = await supabase
+        .from("tenants")
+        .select("id")
+        .eq("id", tenantId)
+        .single();
+      if (selectError && selectError.code !== "PGRST116") throw selectError;
+      if (!data) {
         return res.status(404).json({ error: "Tenant not found" });
       }
 
-      await pool.query("DELETE FROM tenants WHERE id = $1", [tenantId]);
+      const { error } = await supabase
+        .from("tenants")
+        .delete()
+        .eq("id", tenantId);
+      if (error) throw error;
       res.json({ message: "Tenant deleted successfully" });
     } catch (err) {
       console.error(err);
@@ -188,14 +276,21 @@ router.delete(
   async (req, res) => {
     try {
       const landlordId = req.params.id;
-      const result = await pool.query("SELECT * FROM landlords WHERE id = $1", [
-        landlordId,
-      ]);
-      if (result.rows.length === 0) {
+      const { data, error: selectError } = await supabase
+        .from("landlords")
+        .select("id")
+        .eq("id", landlordId)
+        .single();
+      if (selectError && selectError.code !== "PGRST116") throw selectError;
+      if (!data) {
         return res.status(404).json({ error: "Landlord not found" });
       }
 
-      await pool.query("DELETE FROM landlords WHERE id = $1", [landlordId]);
+      const { error } = await supabase
+        .from("landlords")
+        .delete()
+        .eq("id", landlordId);
+      if (error) throw error;
       res.json({ message: "Landlord deleted successfully" });
     } catch (err) {
       console.error(err);
@@ -218,11 +313,12 @@ router.put(
       return res.status(400).json({ errors: errors.array() });
     }
     try {
-      const result = await pool.query(
-        "UPDATE landlords SET verification_status = $1 WHERE id = $2",
-        [status, landlordId]
-      );
-      if (result.rowCount === 0) {
+      const { error, data } = await supabase
+        .from("landlords")
+        .update({ verification_status: status })
+        .eq("id", landlordId);
+      if (error) throw error;
+      if (!data || data.length === 0) {
         return res.status(404).json({ error: "Landlord not found" });
       }
       res.json({
@@ -254,11 +350,12 @@ router.put(
     }
     try {
       const hashed = await hash(password, 10);
-      const result = await pool.query(
-        "UPDATE tenants SET password = $1 WHERE id = $2",
-        [hashed, tenantId]
-      );
-      if (result.rowCount === 0) {
+      const { error, data } = await supabase
+        .from("tenants")
+        .update({ password: hashed })
+        .eq("id", tenantId);
+      if (error) throw error;
+      if (!data || data.length === 0) {
         return res.status(404).json({ error: "Tenant not found" });
       }
       res.json({ message: "Tenant password reset successfully" });
@@ -288,11 +385,12 @@ router.put(
     }
     try {
       const hashed = await hash(password, 10);
-      const result = await pool.query(
-        "UPDATE landlords SET password = $1 WHERE id = $2",
-        [hashed, landlordId]
-      );
-      if (result.rowCount === 0) {
+      const { error, data } = await supabase
+        .from("landlords")
+        .update({ password: hashed })
+        .eq("id", landlordId);
+      if (error) throw error;
+      if (!data || data.length === 0) {
         return res.status(404).json({ error: "Landlord not found" });
       }
       res.json({ message: "Landlord password reset successfully" });
@@ -307,24 +405,32 @@ router.put(
 router.get("/lodges", authMiddleware, adminMiddleware, async (req, res) => {
   const page = parseInt(req.query.page) || 1;
   const limit = parseInt(req.query.limit) || 10;
+  const { from, to } = paginate(page, limit);
   try {
-    const totalRes = await pool.query("SELECT COUNT(*) FROM lodges");
-    const query = paginate(
-      `
-            SELECT l.*, ld.name AS landlord_name, a.name AS area_name
-            FROM lodges l
-            JOIN landlords ld ON l.landlord_id = ld.id
-            LEFT JOIN areas a ON l.area_id = a.id
-            ORDER BY l.id DESC
-            `,
-      { page, limit }
-    );
-    const result = await pool.query(query);
+    const { count, error: countError } = await supabase
+      .from("lodges")
+      .select("id", { count: "exact", head: true });
+    if (countError) throw countError;
+
+    const { data: lodges, error } = await supabase
+      .from("lodges")
+      .select("*, landlord:landlord_id(name), area:area_id(name)")
+      .order("id", { ascending: false })
+      .range(from, to);
+
+    if (error) throw error;
+    // Map landlord_name and area_name for compatibility
+    const mappedLodges = lodges.map((l) => ({
+      ...l,
+      landlord_name: l.landlord?.name || null,
+      area_name: l.area?.name || null,
+    }));
+
     res.json({
       page,
       limit,
-      total: Number(totalRes.rows[0].count),
-      lodges: result.rows,
+      total: count || 0,
+      lodges: mappedLodges,
     });
   } catch (err) {
     console.error(err);
@@ -340,14 +446,21 @@ router.delete(
   async (req, res) => {
     try {
       const lodgeId = req.params.id;
-      const result = await pool.query("SELECT * FROM lodges WHERE id = $1", [
-        lodgeId,
-      ]);
-      if (result.rows.length === 0) {
+      const { data, error: selectError } = await supabase
+        .from("lodges")
+        .select("id")
+        .eq("id", lodgeId)
+        .single();
+      if (selectError && selectError.code !== "PGRST116") throw selectError;
+      if (!data) {
         return res.status(404).json({ error: "Lodge not found" });
       }
 
-      await pool.query("DELETE FROM lodges WHERE id = $1", [lodgeId]);
+      const { error } = await supabase
+        .from("lodges")
+        .delete()
+        .eq("id", lodgeId);
+      if (error) throw error;
       res.json({ message: "Lodge deleted successfully" });
     } catch (err) {
       console.error(err);
@@ -370,18 +483,14 @@ router.put(
       return res.status(400).json({ errors: errors.array() });
     }
     try {
-      const lodgeResult = await pool.query(
-        "SELECT * FROM lodges WHERE id = $1",
-        [lodgeId]
-      );
-      if (lodgeResult.rows.length === 0) {
+      const { data, error } = await supabase
+        .from("lodges")
+        .update({ verification_status: status })
+        .eq("id", lodgeId);
+      if (error) throw error;
+      if (!data || data.length === 0) {
         return res.status(404).json({ error: "Lodge not found" });
       }
-
-      await pool.query(
-        "UPDATE lodges SET verification_status = $1 WHERE id = $2",
-        [status, lodgeId]
-      );
       res.json({ message: "Lodge verification status updated successfully" });
     } catch (err) {
       console.error(err);
@@ -394,22 +503,25 @@ router.put(
 router.get("/feedbacks", authMiddleware, adminMiddleware, async (req, res) => {
   const page = parseInt(req.query.page) || 1;
   const limit = parseInt(req.query.limit) || 10;
+  const { from, to } = paginate(page, limit);
   try {
-    const totalRes = await pool.query("SELECT COUNT(*) FROM feedbacks");
-    const query = paginate(
-      `
-                SELECT id, name, email, message, is_resolved, created_at
-                FROM feedbacks
-                ORDER BY created_at DESC
-            `,
-      { page, limit }
-    );
-    const result = await pool.query(query);
+    const { count, error: countError } = await supabase
+      .from("feedbacks")
+      .select("id", { count: "exact", head: true });
+    if (countError) throw countError;
+
+    const { data: feedbacks, error } = await supabase
+      .from("feedbacks")
+      .select("id, name, email, message, is_resolved, created_at")
+      .order("created_at", { ascending: false })
+      .range(from, to);
+
+    if (error) throw error;
     res.json({
       page,
       limit,
-      total: Number(totalRes.rows[0].count),
-      feedbacks: result.rows,
+      total: count || 0,
+      feedbacks,
     });
   } catch (err) {
     console.error(err);
@@ -431,18 +543,14 @@ router.put(
       return res.status(400).json({ errors: errors.array() });
     }
     try {
-      const feedbackResult = await pool.query(
-        "SELECT * FROM feedbacks WHERE id = $1",
-        [feedbackId]
-      );
-      if (feedbackResult.rows.length === 0) {
+      const { data, error } = await supabase
+        .from("feedbacks")
+        .update({ is_resolved: status })
+        .eq("id", feedbackId);
+      if (error) throw error;
+      if (!data || data.length === 0) {
         return res.status(404).json({ error: "Feedback not found" });
       }
-
-      await pool.query("UPDATE feedbacks SET is_resolved = $1 WHERE id = $2", [
-        status,
-        feedbackId,
-      ]);
       res.json({ message: "Feedback status updated successfully" });
     } catch (err) {
       console.error(err);
@@ -459,14 +567,21 @@ router.delete(
   async (req, res) => {
     try {
       const feedbackId = req.params.id;
-      const result = await pool.query("SELECT * FROM feedbacks WHERE id = $1", [
-        feedbackId,
-      ]);
-      if (result.rows.length === 0) {
+      const { data, error: selectError } = await supabase
+        .from("feedbacks")
+        .select("id")
+        .eq("id", feedbackId)
+        .single();
+      if (selectError && selectError.code !== "PGRST116") throw selectError;
+      if (!data) {
         return res.status(404).json({ error: "Feedback not found" });
       }
 
-      await pool.query("DELETE FROM feedbacks WHERE id = $1", [feedbackId]);
+      const { error } = await supabase
+        .from("feedbacks")
+        .delete()
+        .eq("id", feedbackId);
+      if (error) throw error;
       res.json({ message: "Feedback deleted successfully" });
     } catch (err) {
       console.error(err);
@@ -478,8 +593,12 @@ router.delete(
 // GET all areas
 router.get("/areas", authMiddleware, adminMiddleware, async (req, res) => {
   try {
-    const result = await pool.query("SELECT * FROM areas ORDER BY name ASC");
-    res.json({ areas: result.rows });
+    const { data: areas, error } = await supabase
+      .from("areas")
+      .select("*")
+      .order("name", { ascending: true });
+    if (error) throw error;
+    res.json({ areas });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to fetch areas" });
@@ -499,7 +618,8 @@ router.post(
 
     const { name } = req.body;
     try {
-      await pool.query("INSERT INTO areas (name) VALUES ($1)", [name]);
+      const { error } = await supabase.from("areas").insert([{ name }]);
+      if (error) throw error;
       res.json({ message: "Area added successfully" });
     } catch (err) {
       console.error(err);
@@ -516,14 +636,18 @@ router.delete(
   async (req, res) => {
     try {
       const areaId = req.params.id;
-      const result = await pool.query("SELECT * FROM areas WHERE id = $1", [
-        areaId,
-      ]);
-      if (result.rows.length === 0) {
+      const { data, error: selectError } = await supabase
+        .from("areas")
+        .select("id")
+        .eq("id", areaId)
+        .single();
+      if (selectError && selectError.code !== "PGRST116") throw selectError;
+      if (!data) {
         return res.status(404).json({ error: "Area not found" });
       }
 
-      await pool.query("DELETE FROM areas WHERE id = $1", [areaId]);
+      const { error } = await supabase.from("areas").delete().eq("id", areaId);
+      if (error) throw error;
       res.json({ message: "Area deleted successfully" });
     } catch (err) {
       console.error(err);
@@ -536,24 +660,32 @@ router.delete(
 router.get("/reviews", authMiddleware, adminMiddleware, async (req, res) => {
   const page = parseInt(req.query.page) || 1;
   const limit = parseInt(req.query.limit) || 10;
+  const { from, to } = paginate(page, limit);
   try {
-    const totalRes = await pool.query("SELECT COUNT(*) FROM lodge_reviews");
-    const query = paginate(
-      `
-            SELECT r.*, t.name AS tenant_name, l.name AS lodge_name
-            FROM lodge_reviews r
-            JOIN tenants t ON r.tenant_id = t.id
-            JOIN lodges l ON r.lodge_id = l.id
-            ORDER BY r.review_date DESC
-            `,
-      { page, limit }
-    );
-    const result = await pool.query(query);
+    const { count, error: countError } = await supabase
+      .from("lodge_reviews")
+      .select("id", { count: "exact", head: true });
+    if (countError) throw countError;
+
+    const { data: reviews, error } = await supabase
+      .from("lodge_reviews")
+      .select("*, tenant:tenant_id(name), lodge:lodge_id(name)")
+      .order("review_date", { ascending: false })
+      .range(from, to);
+
+    if (error) throw error;
+    // Map tenant_name and lodge_name for compatibility
+    const mappedReviews = reviews.map((r) => ({
+      ...r,
+      tenant_name: r.tenant?.name || null,
+      lodge_name: r.lodge?.name || null,
+    }));
+
     res.json({
       page,
       limit,
-      total: Number(totalRes.rows[0].count),
-      reviews: result.rows,
+      total: count || 0,
+      reviews: mappedReviews,
     });
   } catch (err) {
     console.error(err);
@@ -575,18 +707,14 @@ router.put(
       return res.status(400).json({ errors: errors.array() });
     }
     try {
-      const reviewResult = await pool.query(
-        "SELECT * FROM lodge_reviews WHERE id = $1",
-        [reviewId]
-      );
-      if (reviewResult.rows.length === 0) {
+      const { data, error } = await supabase
+        .from("lodge_reviews")
+        .update({ is_approved: status })
+        .eq("id", reviewId);
+      if (error) throw error;
+      if (!data || data.length === 0) {
         return res.status(404).json({ error: "Review not found" });
       }
-
-      await pool.query(
-        "UPDATE lodge_reviews SET is_approved = $1 WHERE id = $2",
-        [status, reviewId]
-      );
       res.json({ message: "Review status updated successfully" });
     } catch (err) {
       console.error(err);

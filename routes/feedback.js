@@ -1,5 +1,5 @@
 import express from "express";
-import { pool } from "../config/db.js";
+import supabase from "../config/supabase.js";
 import { body, validationResult } from "express-validator";
 
 // Feedback route
@@ -24,7 +24,7 @@ router.post(
     body("phone_number").optional().isString(),
     body("name").optional().isString(),
   ],
-  (req, res) => {
+  async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       return res.status(400).json({ errors: errors.array() });
@@ -38,24 +38,25 @@ router.post(
       message,
     } = req.body;
 
-    const query = `
-            INSERT INTO feedbacks (name, email, phone_number, role, type, message)
-            VALUES ($1, $2, $3, $4, $5, $6)
-        `;
-    pool.query(
-      query,
-      [name, email, phone_number, role, type, message],
-      (err) => {
-        if (err) {
-          console.error("Database error:", err); // Log the actual error for debugging
-          // For debugging only: include error message in response (remove in production)
-          return res
-            .status(500)
-            .json({ error: "Database error.", details: err.message });
-        }
-        res.status(201).json({ message: "Thank you for your feedback!" });
-      }
-    );
+    const { error } = await supabase.from("feedbacks").insert([
+      {
+        name,
+        email,
+        phone_number,
+        role,
+        type,
+        message,
+      },
+    ]);
+
+    if (error) {
+      console.error("Supabase error:", error);
+      return res
+        .status(500)
+        .json({ error: "Database error.", details: error.message });
+    }
+
+    res.status(201).json({ message: "Thank you for your feedback!" });
   }
 );
 
