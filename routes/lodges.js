@@ -339,7 +339,59 @@ router.get("/visible", authMiddleware, async (_, res) => {
     });
   }
 });
+// Get all lodges from verified landlords
+router.get("/verified", authMiddleware, async (req, res) => {
+  try {
+    // Get all verified landlords
+    const { data: landlords, error: landlordError } = await superbase
+      .from("landlords")
+      .select("id")
+      .eq("verification_status", true);
 
+    if (landlordError) {
+      console.error(landlordError);
+      return res.status(500).json({ error: "Failed to fetch verified landlords" });
+    }
+
+    const landlordIds = (landlords || []).map(l => l.id);
+    if (landlordIds.length === 0) {
+      return res.status(200).json({ lodges: [] });
+    }
+
+    // Get all lodges by verified landlords with images
+    const { data: lodges, error: lodgesError } = await superbase
+      .from("lodges")
+      .select(
+        `
+        id, name, description, address, price, capacity, available_rooms, display_status, created_at,
+        landlord:landlord_id (
+          id, name, profile_picture, verification_status
+        ),
+        lodge_images:image_url[]
+        `
+      )
+      .in("landlord_id", landlordIds)
+      .eq("display_status", true);
+
+    if (lodgesError) {
+      console.error(lodgesError);
+      return res.status(500).json({ error: "Failed to fetch lodges" });
+    }
+
+    // Flatten images to array of URLs
+    const lodgesWithImages = (lodges || []).map((lodge) => ({
+      ...lodge,
+      images: Array.isArray(lodge.lodge_images)
+        ? lodge.lodge_images.map((img) => img.image_url || img)
+        : [],
+    }));
+
+    res.status(200).json({ lodges: lodgesWithImages });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch lodges" });
+  }
+});
 // GET /:id — get full lodge details, landlord info, images, and reviews (Supabase version)
 router.get("/:id", authMiddleware, async (req, res) => {
   const lodgeId = req.params.id;
@@ -591,48 +643,6 @@ router.delete("/:id", authMiddleware, async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to delete lodge" });
-  }
-});
-
-// Get all lodges (visible) - Supabase version
-router.get("/visible", authMiddleware, async (_, res) => {
-  try {
-    // Fetch all visible lodges with images (primary first if available)
-    const { data, error } = await superbase
-      .from("lodges")
-      .select(
-        `
-        id, name, description, address, price, capacity, available_rooms, created_at,
-        lodge_images:image_url(*)
-        `
-      )
-      .eq("display_status", true)
-      .order("created_at", { ascending: false });
-
-    if (error) {
-      console.error(error);
-      return res.status(500).json({ error: "Failed to fetch visible lodges" });
-    }
-
-    // Reformat images: sort by is_primary DESC, id ASC, then map to URLs
-    const lodges = (data || []).map((lodge) => ({
-      ...lodge,
-      images: Array.isArray(lodge.lodge_images)
-        ? lodge.lodge_images
-            .sort((a, b) => {
-              if ((b.is_primary ? 1 : 0) !== (a.is_primary ? 1 : 0)) {
-                return (b.is_primary ? 1 : 0) - (a.is_primary ? 1 : 0);
-              }
-              return (a.id || 0) - (b.id || 0);
-            })
-            .map((img) => img.image_url)
-        : [],
-    }));
-
-    res.status(200).json({ lodges });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Failed to fetch visible lodges" });
   }
 });
 

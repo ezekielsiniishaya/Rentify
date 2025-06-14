@@ -25,7 +25,7 @@ const PORT = process.env.PORT || 5000;
 // Enable CORS
 app.use(
   cors({
-    origin: "https://rentify-ng.netlify.app",
+    origin: ["https://rentify-ng.netlify.app", "http://localhost:3000"],
     credentials: true,
   })
 );
