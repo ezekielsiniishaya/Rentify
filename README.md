@@ -15,3 +15,4 @@ If you can't afford SMS APIs now, consider:
 
     Add a "verified" badge later once true verification is in place.
 feedback button for logged in users
+simple animation for users while the wait for fetch
