@@ -848,4 +848,60 @@ router.delete("/:lodgeId/favorite", authMiddleware, async (req, res) => {
   }
 });
 
+// Favorite lodges
+router.get("/tenant/favorite", authMiddleware, async (req, res) => {
+  try {
+    const tenantId = req.user.id;
+
+    // Get all favorite lodge IDs for this tenant
+    const { data: favorites, error: favError } = await superbase
+      .from("tenant_favorites")
+      .select("lodge_id")
+      .eq("tenant_id", tenantId);
+
+    if (favError) {
+      console.error(favError);
+      return res.status(500).json({ error: "Failed to fetch favorites" });
+    }
+
+    const lodgeIds = (favorites || []).map(fav => fav.lodge_id);
+    if (lodgeIds.length === 0) {
+      return res.status(200).json({ lodges: [] });
+    }
+
+    // Fetch lodge details for all favorite lodges
+    const { data: lodges, error: lodgesError } = await superbase
+      .from("lodges")
+      .select(
+        `
+        id, name, description, address, price, capacity, available_rooms, display_status, created_at,
+        landlord:landlord_id (
+          id, name, profile_picture, verification_status
+        ),
+        lodge_images:image_url[]
+        `
+      )
+      .in("id", lodgeIds)
+      .eq("display_status", true);
+
+    if (lodgesError) {
+      console.error(lodgesError);
+      return res.status(500).json({ error: "Failed to fetch favorite lodges" });
+    }
+
+    // Flatten images to array of URLs
+    const lodgesWithImages = (lodges || []).map((lodge) => ({
+      ...lodge,
+      images: Array.isArray(lodge.lodge_images)
+        ? lodge.lodge_images.map((img) => img.image_url || img)
+        : [],
+    }));
+
+    res.status(200).json({ lodges: lodgesWithImages });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch favorite lodges" });
+  }
+});
+
 export default router;
