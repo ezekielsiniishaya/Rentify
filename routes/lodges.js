@@ -2,7 +2,7 @@
 import express from "express";
 import { body, validationResult } from "express-validator";
 import authMiddleware from "../middlewares/auth.js";
-import superbase from "../config/supabase.js";
+import supabase from "../config/supabase.js";
 import { deleteOldImage } from "../utils/upload.js";
 import { lodgeUpload } from "../utils/upload.js";
 
@@ -22,7 +22,7 @@ router.post(
       .withMessage("Area is required")
       .custom(async (value) => {
         // Check if area exists in areas table by name
-        const { data, error } = await superbase
+        const { data, error } = await supabase
           .from("areas")
           .select("id")
           .eq("name", value)
@@ -76,7 +76,7 @@ router.post(
       } = req.body;
 
       // Prevent duplicate lodge names for same landlord
-      const { data: existing, error: existingError } = await superbase
+      const { data: existing, error: existingError } = await supabase
         .from("lodges")
         .select("id")
         .eq("landlord_id", landlordId)
@@ -89,7 +89,7 @@ router.post(
       }
 
       // Get area_id from areas by area name
-      const { data: areaData, error: areaError } = await superbase
+      const { data: areaData, error: areaError } = await supabase
         .from("areas")
         .select("id")
         .eq("name", area)
@@ -102,7 +102,7 @@ router.post(
       const area_id = areaData.id;
 
       // Insert lodge into database, now including area_id
-      const { data: lodgeData, error: lodgeError } = await superbase
+      const { data: lodgeData, error: lodgeError } = await supabase
         .from("lodges")
         .insert([
           {
@@ -342,43 +342,64 @@ router.get("/visible", authMiddleware, async (_, res) => {
 // Get all lodges from verified landlords
 router.get("/verified", authMiddleware, async (req, res) => {
   try {
-    // Get all verified landlords
-    const { data: landlords, error: landlordError } = await superbase
+    // Get all verified landlord IDs
+    const { data: landlords, error: landlordError } = await supabase
       .from("landlords")
       .select("id")
       .eq("verification_status", true);
 
     if (landlordError) {
-      console.error(landlordError);
-      return res.status(500).json({ error: "Failed to fetch verified landlords" });
+      console.error(
+        "Error fetching verified landlords:",
+        landlordError.message || landlordError
+      );
+      return res
+        .status(500)
+        .json({ error: "Database error while fetching verified landlords" });
     }
 
-    const landlordIds = (landlords || []).map(l => l.id);
+    const landlordIds = (landlords || []).map((l) => l.id);
     if (landlordIds.length === 0) {
-      return res.status(200).json({ lodges: [] });
+      return res.status(200).json({ lodges: [] }); // No lodges if no verified landlords
     }
 
-    // Get all lodges by verified landlords with images
-    const { data: lodges, error: lodgesError } = await superbase
+    // Get lodges by verified landlords
+    const { data: lodges, error: lodgesError } = await supabase
       .from("lodges")
       .select(
         `
-        id, name, description, address, price, capacity, available_rooms, display_status, created_at,
+        id,
+        name,
+        description,
+        address,
+        price,
+        capacity,
+        available_rooms,
+        display_status,
+        created_at,
         landlord:landlord_id (
-          id, name, profile_picture, verification_status
+          id,
+          name,
+          profile_picture,
+          verification_status
         ),
         lodge_images:image_url[]
-        `
+      `
       )
       .in("landlord_id", landlordIds)
       .eq("display_status", true);
 
     if (lodgesError) {
-      console.error(lodgesError);
-      return res.status(500).json({ error: "Failed to fetch lodges" });
+      console.error(
+        "Error fetching lodges:",
+        lodgesError.message || lodgesError
+      );
+      return res
+        .status(500)
+        .json({ error: "Database error while fetching lodges" });
     }
 
-    // Flatten images to array of URLs
+    // Flatten images array safely
     const lodgesWithImages = (lodges || []).map((lodge) => ({
       ...lodge,
       images: Array.isArray(lodge.lodge_images)
@@ -388,8 +409,10 @@ router.get("/verified", authMiddleware, async (req, res) => {
 
     res.status(200).json({ lodges: lodgesWithImages });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Failed to fetch lodges" });
+    console.error("Unexpected server error:", err.message || err);
+    res
+      .status(500)
+      .json({ error: "Unexpected server error while fetching lodges" });
   }
 });
 // GET /:id — get full lodge details, landlord info, images, and reviews (Supabase version)
@@ -864,7 +887,7 @@ router.get("/tenant/favorite", authMiddleware, async (req, res) => {
       return res.status(500).json({ error: "Failed to fetch favorites" });
     }
 
-    const lodgeIds = (favorites || []).map(fav => fav.lodge_id);
+    const lodgeIds = (favorites || []).map((fav) => fav.lodge_id);
     if (lodgeIds.length === 0) {
       return res.status(200).json({ lodges: [] });
     }
