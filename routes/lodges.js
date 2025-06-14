@@ -342,72 +342,19 @@ router.get("/visible", authMiddleware, async (_, res) => {
 // Get all lodges from verified landlords
 router.get("/verified", authMiddleware, async (req, res) => {
   try {
-    // Get all verified landlord IDs
-    const { data: landlords, error: landlordError } = await supabase
-      .from("landlords")
-      .select("id")
-      .eq("verification_status", true);
+    const { data: lodges, error } = await supabase.rpc(
+      "fetch_verified_lodges",
+      {}
+    );
 
-    if (landlordError) {
-      console.error(
-        "Error fetching verified landlords:",
-        landlordError.message || landlordError
-      );
-      return res
-        .status(500)
-        .json({ error: "Database error while fetching verified landlords" });
-    }
-
-    const landlordIds = (landlords || []).map((l) => l.id);
-    if (landlordIds.length === 0) {
-      return res.status(200).json({ lodges: [] }); // No lodges if no verified landlords
-    }
-
-    // Get lodges by verified landlords
-    const { data: lodges, error: lodgesError } = await supabase
-      .from("lodges")
-      .select(
-        `
-        id,
-        name,
-        description,
-        address,
-        price,
-        capacity,
-        available_rooms,
-        display_status,
-        created_at,
-        landlord:landlord_id (
-          id,
-          name,
-          profile_picture,
-          verification_status
-        ),
-        lodge_images:image_url[]
-      `
-      )
-      .in("landlord_id", landlordIds)
-      .eq("display_status", true);
-
-    if (lodgesError) {
-      console.error(
-        "Error fetching lodges:",
-        lodgesError.message || lodgesError
-      );
+    if (error) {
+      console.error("Error fetching lodges from SQL function:", error);
       return res
         .status(500)
         .json({ error: "Database error while fetching lodges" });
     }
 
-    // Flatten images array safely
-    const lodgesWithImages = (lodges || []).map((lodge) => ({
-      ...lodge,
-      images: Array.isArray(lodge.lodge_images)
-        ? lodge.lodge_images.map((img) => img.image_url || img)
-        : [],
-    }));
-
-    res.status(200).json({ lodges: lodgesWithImages });
+    res.status(200).json({ lodges: lodges || [] });
   } catch (err) {
     console.error("Unexpected server error:", err.message || err);
     res
@@ -415,6 +362,7 @@ router.get("/verified", authMiddleware, async (req, res) => {
       .json({ error: "Unexpected server error while fetching lodges" });
   }
 });
+
 // GET /:id — get full lodge details, landlord info, images, and reviews (Supabase version)
 router.get("/:id", authMiddleware, async (req, res) => {
   const lodgeId = req.params.id;
@@ -719,7 +667,7 @@ router.post("/:lodgeId/favorite", authMiddleware, async (req, res) => {
     const lodgeId = req.params.lodgeId;
 
     // Check if lodge exists
-    const { data: lodge, error: lodgeError } = await superbase
+    const { data: lodge, error: lodgeError } = await supabase
       .from("lodges")
       .select("id")
       .eq("id", lodgeId)
@@ -732,7 +680,7 @@ router.post("/:lodgeId/favorite", authMiddleware, async (req, res) => {
     }
 
     // Add lodge to favorite
-    const { data: favorite, error: favError } = await superbase
+    const { data: favorite, error: favError } = await supabase
       .from("tenant_favorites")
       .insert([{ tenant_id: tenantId, lodge_id: lodgeId }])
       .select("id, tenant_id, lodge_id")
@@ -837,7 +785,7 @@ router.delete("/:lodgeId/favorite", authMiddleware, async (req, res) => {
     const lodgeId = parseInt(req.params.lodgeId, 10);
 
     // Check if lodge exists
-    const { data: lodge, error: lodgeError } = await superbase
+    const { data: lodge, error: lodgeError } = await supabase
       .from("lodges")
       .select("id")
       .eq("id", lodgeId)
@@ -850,7 +798,7 @@ router.delete("/:lodgeId/favorite", authMiddleware, async (req, res) => {
     }
 
     // Remove from favorites
-    const { error: delError } = await superbase
+    const { error: delError } = await supabase
       .from("tenant_favorites")
       .delete()
       .eq("tenant_id", tenantId)
@@ -876,24 +824,25 @@ router.get("/tenant/favorite", authMiddleware, async (req, res) => {
   try {
     const tenantId = req.user.id;
 
-    // Get all favorite lodge IDs for this tenant
-    const { data: favorites, error: favError } = await superbase
+    // Step 1: Get all favorite lodge IDs for this tenant
+    const { data: favorites, error: favError } = await supabase
       .from("tenant_favorites")
       .select("lodge_id")
       .eq("tenant_id", tenantId);
 
     if (favError) {
-      console.error(favError);
+      console.error("Favorite fetch error:", favError);
       return res.status(500).json({ error: "Failed to fetch favorites" });
     }
 
     const lodgeIds = (favorites || []).map((fav) => fav.lodge_id);
+
     if (lodgeIds.length === 0) {
       return res.status(200).json({ lodges: [] });
     }
 
-    // Fetch lodge details for all favorite lodges
-    const { data: lodges, error: lodgesError } = await superbase
+    // Step 2: Fetch detailed lodge info for all favorite lodge IDs
+    const { data: lodges, error: lodgesError } = await supabase
       .from("lodges")
       .select(
         `
@@ -901,29 +850,29 @@ router.get("/tenant/favorite", authMiddleware, async (req, res) => {
         landlord:landlord_id (
           id, name, profile_picture, verification_status
         ),
-        lodge_images:image_url[]
-        `
+        lodge_images (
+          image_url
+        )
+      `
       )
       .in("id", lodgeIds)
       .eq("display_status", true);
 
     if (lodgesError) {
-      console.error(lodgesError);
+      console.error("Lodge fetch error:", lodgesError);
       return res.status(500).json({ error: "Failed to fetch favorite lodges" });
     }
 
-    // Flatten images to array of URLs
+    // Step 3: Flatten the lodge_images to an array of image URLs
     const lodgesWithImages = (lodges || []).map((lodge) => ({
       ...lodge,
-      images: Array.isArray(lodge.lodge_images)
-        ? lodge.lodge_images.map((img) => img.image_url || img)
-        : [],
+      images: (lodge.lodge_images || []).map((img) => img.image_url),
     }));
 
-    res.status(200).json({ lodges: lodgesWithImages });
+    return res.status(200).json({ lodges: lodgesWithImages });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Failed to fetch favorite lodges" });
+    console.error("Unexpected error:", err);
+    return res.status(500).json({ error: "Failed to fetch favorite lodges" });
   }
 });
 
