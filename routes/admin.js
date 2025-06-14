@@ -1,4 +1,11 @@
-// ... (imports and setup unchanged)
+import express from "express";
+import { body, validationResult } from "express-validator";
+import supabase from "../config/supabase.js";
+import authMiddleware, { adminMiddleware } from "../middlewares/auth.js";
+import { hash, compare } from "bcryptjs";
+import pkg from "jsonwebtoken";
+const { sign } = pkg;
+const router = express.Router();
 
 // Utility: Pagination
 function paginate(page = 1, limit = 10) {
@@ -76,8 +83,7 @@ router.post(
       const hashed = await hash(password, 10);
       const { error } = await supabase
         .from("admins")
-        .insert([{ username, email, password_hash: hashed }])
-        .select();
+        .insert([{ username, email, password_hash: hashed }]);
       if (error) throw error;
       res.json({ message: "Admin created successfully" });
     } catch (err) {
@@ -109,8 +115,7 @@ router.put(
       const { error } = await supabase
         .from("admins")
         .update({ password_hash: hashed })
-        .eq("id", id)
-        .select();
+        .eq("id", id);
 
       if (error) throw error;
       res.json({ message: "Password updated successfully" });
@@ -137,11 +142,7 @@ router.delete(
     }
 
     try {
-      const { error } = await supabase
-        .from("admins")
-        .delete()
-        .eq("id", id)
-        .select();
+      const { error } = await supabase.from("admins").delete().eq("id", id);
 
       if (error) throw error;
       res.json({ message: "Admin deleted successfully" });
@@ -257,8 +258,7 @@ router.delete(
       const { error } = await supabase
         .from("tenants")
         .delete()
-        .eq("id", tenantId)
-        .select();
+        .eq("id", tenantId);
       if (error) throw error;
       res.json({ message: "Tenant deleted successfully" });
     } catch (err) {
@@ -289,8 +289,7 @@ router.delete(
       const { error } = await supabase
         .from("landlords")
         .delete()
-        .eq("id", landlordId)
-        .select();
+        .eq("id", landlordId);
       if (error) throw error;
       res.json({ message: "Landlord deleted successfully" });
     } catch (err) {
@@ -391,8 +390,7 @@ router.put(
       const { error, data } = await supabase
         .from("landlords")
         .update({ password: hashed })
-        .eq("id", landlordId)
-        .select();
+        .eq("id", landlordId).select;
       if (error) throw error;
       if (!data || data.length === 0) {
         return res.status(404).json({ error: "Landlord not found" });
@@ -463,8 +461,7 @@ router.delete(
       const { error } = await supabase
         .from("lodges")
         .delete()
-        .eq("id", lodgeId)
-        .select();
+        .eq("id", lodgeId);
       if (error) throw error;
       res.json({ message: "Lodge deleted successfully" });
     } catch (err) {
@@ -491,8 +488,7 @@ router.put(
       const { data, error } = await supabase
         .from("lodges")
         .update({ verification_status: status })
-        .eq("id", lodgeId)
-        .select();
+        .eq("id", lodgeId).select;
       if (error) throw error;
       if (!data || data.length === 0) {
         return res.status(404).json({ error: "Lodge not found" });
@@ -587,8 +583,7 @@ router.delete(
       const { error } = await supabase
         .from("feedbacks")
         .delete()
-        .eq("id", feedbackId)
-        .select();
+        .eq("id", feedbackId);
       if (error) throw error;
       res.json({ message: "Feedback deleted successfully" });
     } catch (err) {
@@ -626,10 +621,7 @@ router.post(
 
     const { name } = req.body;
     try {
-      const { error } = await supabase
-        .from("areas")
-        .insert([{ name }])
-        .select();
+      const { error } = await supabase.from("areas").insert([{ name }]);
       if (error) throw error;
       res.json({ message: "Area added successfully" });
     } catch (err) {
@@ -657,11 +649,7 @@ router.delete(
         return res.status(404).json({ error: "Area not found" });
       }
 
-      const { error } = await supabase
-        .from("areas")
-        .delete()
-        .eq("id", areaId)
-        .select();
+      const { error } = await supabase.from("areas").delete().eq("id", areaId);
       if (error) throw error;
       res.json({ message: "Area deleted successfully" });
     } catch (err) {
