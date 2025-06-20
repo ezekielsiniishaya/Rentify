@@ -128,7 +128,7 @@ router.post(
       // If images uploaded, save files to cloudinary
       if (req.files && req.files.length > 0) {
         for (const file of req.files) {
-          const imageUrl = file.path;
+          const imageUrl = uploadedCloudinaryResult.secure_url;
           await supabase
             .from("lodge_images")
             .insert([{ lodge_id: lodgeId, image_url: imageUrl }]);
