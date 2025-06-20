@@ -607,8 +607,8 @@ router.delete("/:id", authMiddleware, async (req, res) => {
     }
 
     // 🧹 Clean up DB
-    await superbase.from("lodge_images").delete().eq("lodge_id", lodgeId);
-    await superbase.from("lodges").delete().eq("id", lodgeId);
+    await supabase.from("lodge_images").delete().eq("lodge_id", lodgeId);
+    await supabase.from("lodges").delete().eq("id", lodgeId);
 
     res.status(200).json({ message: "Lodge deleted" });
   } catch (err) {
