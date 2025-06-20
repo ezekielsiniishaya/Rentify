@@ -23,11 +23,10 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 // Enable CORS
-const cors = require("cors");
-
 app.use(
   cors({
-    origin: "*", // Allow all origins(change suring production)
+    origin: ["https://rentify-ng.netlify.app", "http://localhost:3000", "http://192.168.144.44:3000"],
+    credentials: true,
   })
 );
 
