@@ -129,7 +129,7 @@ router.post(
       if (req.files && req.files.length > 0) {
         for (const file of req.files) {
           const imageUrl = file.path;
-          await superbase
+          await supabase
             .from("lodge_images")
             .insert([{ lodge_id: lodgeId, image_url: imageUrl }]);
         }
@@ -153,7 +153,7 @@ router.get("/search", authMiddleware, async (req, res) => {
     const { area_id, min_price, max_price, name, min_rooms, max_rooms } =
       req.query;
 
-    let query = superbase
+    let query = supabase
       .from("lodges")
       .select(
         `
@@ -197,7 +197,7 @@ router.get("/search", authMiddleware, async (req, res) => {
 router.get("/", authMiddleware, async (_, res) => {
   try {
     // Fetch all lodges with landlord info and images using Supabase
-    const { data, error } = await superbase
+    const { data, error } = await supabase
       .from("lodges")
       .select(
         `
@@ -240,7 +240,7 @@ router.get("/landlord/:landlordId", authMiddleware, async (req, res) => {
     const { landlordId } = req.params;
 
     // Get landlord info
-    const { data: landlord, error: landlordError } = await superbase
+    const { data: landlord, error: landlordError } = await supabase
       .from("landlords")
       .select(
         "id, name, email, phone_number, profile_picture, verification_status, account_created"
@@ -255,7 +255,7 @@ router.get("/landlord/:landlordId", authMiddleware, async (req, res) => {
     }
 
     // Get all lodges with images for this landlord
-    const { data: lodges, error: lodgesError } = await superbase
+    const { data: lodges, error: lodgesError } = await supabase
       .from("lodges")
       .select(
         `
@@ -297,7 +297,7 @@ router.get("/landlord/:landlordId", authMiddleware, async (req, res) => {
 router.get("/visible", authMiddleware, async (_, res) => {
   try {
     // Fetch all visible lodges with images (primary first if available)
-    const { data, error } = await superbase
+    const { data, error } = await supabase
       .from("lodges")
       .select(
         `
@@ -369,7 +369,7 @@ router.get("/:id", authMiddleware, async (req, res) => {
 
   try {
     // Fetch lodge details with landlord info and images
-    const { data: lodge, error: lodgeError } = await superbase
+    const { data: lodge, error: lodgeError } = await supabase
       .from("lodges")
       .select(
         `
@@ -391,7 +391,7 @@ router.get("/:id", authMiddleware, async (req, res) => {
     }
 
     // Fetch reviews for the lodge (with tenant info)
-    const { data: reviews, error: reviewsError } = await superbase
+    const { data: reviews, error: reviewsError } = await supabase
       .from("lodge_reviews")
       .select(
         `
@@ -440,7 +440,7 @@ router.put(
       .optional()
       .custom(async (value) => {
         if (!value) return true;
-        const { data, error } = await superbase
+        const { data, error } = await supabase
           .from("areas")
           .select("id")
           .eq("name", value)
@@ -478,7 +478,7 @@ router.put(
         return res.status(400).json({ errors: errors.array() });
       }
 
-      const { data: lodgeCheck, error: lodgeCheckError } = await superbase
+      const { data: lodgeCheck, error: lodgeCheckError } = await supabase
         .from("lodges")
         .select("id")
         .eq("id", lodgeId)
@@ -491,7 +491,7 @@ router.put(
       }
 
       if (name) {
-        const { data: conflict } = await superbase
+        const { data: conflict } = await supabase
           .from("lodges")
           .select("id")
           .eq("landlord_id", landlordId)
@@ -531,7 +531,7 @@ router.put(
       // 📌 Convert area name to ID if provided
       let area_id;
       if (area) {
-        const { data: areaData, error: areaError } = await superbase
+        const { data: areaData, error: areaError } = await supabase
           .from("areas")
           .select("id")
           .eq("name", area)
@@ -554,7 +554,7 @@ router.put(
         updateObj.available_rooms = available_rooms;
       if (area_id !== undefined) updateObj.area_id = area_id;
 
-      const { data: updated, error: updateError } = await superbase
+      const { data: updated, error: updateError } = await supabase
         .from("lodges")
         .update(updateObj)
         .eq("id", lodgeId)
@@ -583,7 +583,7 @@ router.delete("/:id", authMiddleware, async (req, res) => {
 
   try {
     // Confirm ownership
-    const { data: check, error: checkError } = await superbase
+    const { data: check, error: checkError } = await supabase
       .from("lodges")
       .select("id")
       .eq("id", lodgeId)
@@ -594,7 +594,7 @@ router.delete("/:id", authMiddleware, async (req, res) => {
     }
 
     // 🔍 Fetch all images first (to delete from Cloudinary)
-    const { data: images } = await superbase
+    const { data: images } = await supabase
       .from("lodge_images")
       .select("image_url")
       .eq("lodge_id", lodgeId);
@@ -625,7 +625,7 @@ router.patch("/:id/display", authMiddleware, async (req, res) => {
 
   try {
     // Check if lodge exists and belongs to the landlord
-    const { data: check, error: checkError } = await superbase
+    const { data: check, error: checkError } = await supabase
       .from("lodges")
       .select("id")
       .eq("id", lodgeId)
@@ -639,7 +639,7 @@ router.patch("/:id/display", authMiddleware, async (req, res) => {
     }
 
     // Update display status for lodge
-    const { error: updateError } = await superbase
+    const { error: updateError } = await supabase
       .from("lodges")
       .update({ display_status: status })
       .eq("id", lodgeId)
