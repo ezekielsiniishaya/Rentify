@@ -216,6 +216,7 @@ router.get("/profile", authMiddleware, async (req, res) => {
   }
 });
 
+// Delete Profile picture
 // PUT /api/landlords/profile
 
 router.put(
@@ -309,12 +310,34 @@ router.put(
     }
   }
 );
+router.delete("/profile-picture", authMiddleware, async (req, res) => {
+  try {
+    const { data: landlord } = await supabase
+      .from("landlords")
+      .select("profile_picture")
+      .eq("id", req.user.id)
+      .maybeSingle();
 
-// POST /api/landlords/logout
-router.post("/logout", (req, res) => {
-  res.status(200).json({
-    message: "Logout successful",
-  });
+    const oldImageUrl = landlord?.profile_picture;
+
+    if (oldImageUrl && oldImageUrl.includes("res.cloudinary.com")) {
+      await deleteOldImage(oldImageUrl);
+    }
+
+    const { error } = await supabase
+      .from("landlords")
+      .update({ profile_picture: null })
+      .eq("id", req.user.id);
+
+    if (error) return res.status(500).json({ error: "Failed to remove image" });
+
+    res.status(200).json({ message: "Profile picture removed" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Server error" });
+  }
 });
+
+// Logout to be handled on the client side
 
 export default router;
