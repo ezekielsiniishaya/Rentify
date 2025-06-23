@@ -880,19 +880,26 @@ router.get("/tenant/favorite", authMiddleware, async (req, res) => {
   }
 });
 // Change Lodge visibility (Supabase version)
-router.patch("/:id/visibility", authenticate, async (req, res) => {
+// Change Lodge visibility (Supabase version)
+router.patch("/:id/visibility", authMiddleware, async (req, res) => {
   const { id } = req.params;
-  const { visible } = req.body;
+  const { display_status } = req.body;
   const userId = req.user.id;
 
+  if (typeof display_status !== "boolean") {
+    return res.status(400).json({ error: "display_status must be a boolean" });
+  }
+
   try {
+    // Check lodge exists and belongs to the landlord
     const { data: lodge, error: findError } = await supabase
       .from("lodges")
       .select("id, landlord_id")
       .eq("id", id)
       .single();
 
-    if (findError || !lodge) {
+    if (findError) throw findError;
+    if (!lodge) {
       return res.status(404).json({ error: "Lodge not found" });
     }
 
@@ -900,20 +907,22 @@ router.patch("/:id/visibility", authenticate, async (req, res) => {
       return res.status(403).json({ error: "Unauthorized" });
     }
 
+    // Update display status
     const { error: updateError } = await supabase
       .from("lodges")
-      .update({ visible })
+      .update({ display_status })
       .eq("id", id);
 
-    if (updateError) {
-      return res.status(500).json({ error: "Failed to update visibility" });
-    }
+    if (updateError) throw updateError;
 
-    res
-      .status(200)
-      .json({ message: `Lodge is now ${visible ? "visible" : "hidden"}` });
+    return res.status(200).json({
+      message: `Lodge is now marked as ${
+        display_status ? "Available" : "Full"
+      }`,
+    });
   } catch (error) {
-    res.status(500).json({ error: "Server error" });
+    console.error("Update visibility error:", error.message || error);
+    return res.status(500).json({ error: "Server error" });
   }
 });
 
