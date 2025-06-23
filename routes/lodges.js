@@ -879,5 +879,42 @@ router.get("/tenant/favorite", authMiddleware, async (req, res) => {
     return res.status(500).json({ error: "Failed to fetch favorite lodges" });
   }
 });
+// Change Lodge visibility (Supabase version)
+router.patch("/:id/visibility", authenticate, async (req, res) => {
+  const { id } = req.params;
+  const { visible } = req.body;
+  const userId = req.user.id;
+
+  try {
+    const { data: lodge, error: findError } = await supabase
+      .from("lodges")
+      .select("id, landlord_id")
+      .eq("id", id)
+      .single();
+
+    if (findError || !lodge) {
+      return res.status(404).json({ error: "Lodge not found" });
+    }
+
+    if (lodge.landlord_id !== userId) {
+      return res.status(403).json({ error: "Unauthorized" });
+    }
+
+    const { error: updateError } = await supabase
+      .from("lodges")
+      .update({ visible })
+      .eq("id", id);
+
+    if (updateError) {
+      return res.status(500).json({ error: "Failed to update visibility" });
+    }
+
+    res
+      .status(200)
+      .json({ message: `Lodge is now ${visible ? "visible" : "hidden"}` });
+  } catch (error) {
+    res.status(500).json({ error: "Server error" });
+  }
+});
 
 export default router;
