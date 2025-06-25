@@ -924,6 +924,6 @@ router.patch("/:id/visibility", authMiddleware, async (req, res) => {
     console.error("Update visibility error:", error.message || error);
     return res.status(500).json({ error: "Server error" });
   }
-});
+}); 
 
 export default router;
