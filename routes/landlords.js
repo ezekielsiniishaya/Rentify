@@ -336,23 +336,7 @@ router.delete("/profile-picture", authMiddleware, async (req, res) => {
     res.status(500).json({ error: "Server error" });
   }
 });
-// Get all areas
-// GET areas for landlords (no admin required)
-router.get("/landlord-areas", authMiddleware, async (req, res) => {
-  try {
-    const { data: areas, error } = await supabase
-      .from("areas")
-      .select("name")
-      .order("name", { ascending: true });
 
-    if (error) throw error;
-
-    res.json({ areas });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Failed to fetch areas" });
-  }
-});
 
 // Logout to be handled on the client side
 

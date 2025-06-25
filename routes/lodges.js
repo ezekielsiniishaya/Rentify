@@ -879,7 +879,7 @@ router.get("/tenant/favorite", authMiddleware, async (req, res) => {
     return res.status(500).json({ error: "Failed to fetch favorite lodges" });
   }
 });
-// Change Lodge visibility (Supabase version)
+
 // Change Lodge visibility (Supabase version)
 router.patch("/:id/visibility", authMiddleware, async (req, res) => {
   const { id } = req.params;
@@ -924,6 +924,22 @@ router.patch("/:id/visibility", authMiddleware, async (req, res) => {
     console.error("Update visibility error:", error.message || error);
     return res.status(500).json({ error: "Server error" });
   }
-}); 
+});
+// Get all areas
+router.get("/areas", authMiddleware, async (req, res) => {
+  try {
+    const { data: areas, error } = await supabase
+      .from("areas")
+      .select("name")
+      .order("name", { ascending: true });
+
+    if (error) throw error;
+
+    res.json({ areas });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch areas" });
+  }
+});
 
 export default router;
