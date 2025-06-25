@@ -7,7 +7,22 @@ import { deleteOldImage } from "../utils/upload.js";
 import { lodgeUpload } from "../utils/upload.js";
 
 const router = express.Router();
+// Get all areas
+router.get("/areas", authMiddleware, async (req, res) => {
+  try {
+    const { data: areas, error } = await supabase
+      .from("areas")
+      .select("name")
+      .order("name", { ascending: true });
 
+    if (error) throw error;
+
+    res.json({ areas });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch areas" });
+  }
+});
 // Add lodge route (using Supabase)
 router.post(
   "/add",
@@ -923,22 +938,6 @@ router.patch("/:id/visibility", authMiddleware, async (req, res) => {
   } catch (error) {
     console.error("Update visibility error:", error.message || error);
     return res.status(500).json({ error: "Server error" });
-  }
-});
-// Get all areas
-router.get("/areas", authMiddleware, async (req, res) => {
-  try {
-    const { data: areas, error } = await supabase
-      .from("areas")
-      .select("name")
-      .order("name", { ascending: true });
-
-    if (error) throw error;
-
-    res.json({ areas });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Failed to fetch areas" });
   }
 });
 
