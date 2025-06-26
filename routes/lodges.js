@@ -399,7 +399,7 @@ router.get("/:id", authMiddleware, async (req, res) => {
         lodge_images:image_url[]
         `
       )
-      .eq("id", lodgeId)
+      .eq("id", Number(lodgeId))
       .eq("landlord_id", req.user.id)
       .maybeSingle();
 
