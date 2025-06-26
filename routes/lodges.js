@@ -400,7 +400,7 @@ router.get("/:id", authMiddleware, async (req, res) => {
         `
       )
       .eq("id", lodgeId)
-      .eq("display_status", true)
+      .eq("landlord_id", req.user.id)
       .maybeSingle();
 
     if (lodgeError || !lodge) {
