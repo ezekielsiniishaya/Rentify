@@ -382,78 +382,40 @@ router.get("/verified", authMiddleware, async (req, res) => {
   }
 });
 
-// GET /:id — get full lodge details, landlord info, images, and reviews (Supabase version)
+// GET /api/lodges/:id - Get lodge details and images (no landlord or reviews)
 router.get("/:id", authMiddleware, async (req, res) => {
   const lodgeId = req.params.id;
-  const userId = req.user.id;
-  const userRole = req.user.role; // Make sure your auth middleware sets this
 
   try {
-    // Build query: if landlord, allow access to their own lodge regardless of display_status
-    let query = supabase
+    const { data: lodge, error } = await supabase
       .from("lodges")
       .select(
         `
         id, name, description, address, price, capacity, available_rooms, display_status, created_at,
-        landlord:landlord_id (
-          id, name, profile_picture, verification_status, email, phone_number
-        ),
         lodge_images:image_url[]
-        `
+      `
       )
-      .eq("id", lodgeId);
+      .eq("id", Number(lodgeId))
+      .maybeSingle();
 
-    // If user is a landlord, ensure they can access their own lodge even if not visible
-    if (userRole === "landlord") {
-      query = query.eq("landlord_id", userId);
-    } else {
-      // For other users, only show visible lodges
-      query = query.eq("display_status", true);
+    if (error || !lodge) {
+      return res.status(404).json({ error: "Lodge not found" });
     }
 
-    const { data: lodge, error: lodgeError } = await query.maybeSingle();
-
-    if (lodgeError || !lodge) {
-      return res.status(404).json({
-        error: "Lodge not found or unavailable",
-      });
-    }
-
-    // Fetch reviews for the lodge (with tenant info)
-    const { data: reviews, error: reviewsError } = await supabase
-      .from("lodge_reviews")
-      .select(
-        `
-        id, rating, review_text, review_date,
-        tenant:tenant_id (
-          id, name
-        )
-        `
-      )
-      .eq("lodge_id", lodgeId)
-      .order("review_date", { ascending: false });
-
-    if (reviewsError) {
-      console.error(reviewsError);
-      return res.status(500).json({
-        error: "Failed to fetch lodge reviews",
-      });
-    }
+    // Format image list
+    const images = Array.isArray(lodge.lodge_images)
+      ? lodge.lodge_images.map((img) => img.image_url || img)
+      : [];
 
     res.status(200).json({
       lodge: {
         ...lodge,
-        images: Array.isArray(lodge.lodge_images)
-          ? lodge.lodge_images.map((img) => img.image_url || img)
-          : [],
-        reviews: reviews || [],
+        images,
       },
     });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({
-      error: "Failed to fetch lodge details",
-    });
+    console.error("Error fetching lodge:", err);
+    res.status(500).json({ error: "Server error" });
   }
 });
 
