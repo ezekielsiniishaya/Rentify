@@ -385,10 +385,12 @@ router.get("/verified", authMiddleware, async (req, res) => {
 // GET /:id — get full lodge details, landlord info, images, and reviews (Supabase version)
 router.get("/:id", authMiddleware, async (req, res) => {
   const lodgeId = req.params.id;
+  const userId = req.user.id;
+  const userRole = req.user.role; // Make sure your auth middleware sets this
 
   try {
-    // Fetch lodge details with landlord info and images
-    const { data: lodge, error: lodgeError } = await supabase
+    // Build query: if landlord, allow access to their own lodge regardless of display_status
+    let query = supabase
       .from("lodges")
       .select(
         `
@@ -399,9 +401,17 @@ router.get("/:id", authMiddleware, async (req, res) => {
         lodge_images:image_url[]
         `
       )
-      .eq("id", Number(lodgeId))
-      .eq("landlord_id", req.user.id)
-      .maybeSingle();
+      .eq("id", lodgeId);
+
+    // If user is a landlord, ensure they can access their own lodge even if not visible
+    if (userRole === "landlord") {
+      query = query.eq("landlord_id", userId);
+    } else {
+      // For other users, only show visible lodges
+      query = query.eq("display_status", true);
+    }
+
+    const { data: lodge, error: lodgeError } = await query.maybeSingle();
 
     if (lodgeError || !lodge) {
       return res.status(404).json({
