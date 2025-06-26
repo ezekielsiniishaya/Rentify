@@ -7,6 +7,7 @@ import { deleteOldImage } from "../utils/upload.js";
 import { lodgeUpload } from "../utils/upload.js";
 
 const router = express.Router();
+
 // Get all areas
 router.get("/areas", authMiddleware, async (req, res) => {
   try {
@@ -382,29 +383,37 @@ router.get("/verified", authMiddleware, async (req, res) => {
   }
 });
 
-// GET /api/lodges/:id - Get lodge details and images (no landlord or reviews)
+// Get lodge details
 router.get("/:id", authMiddleware, async (req, res) => {
-  const lodgeId = req.params.id;
+  const lodgeId = Number(req.params.id);
+  const userId = req.user.id;
 
   try {
     const { data: lodge, error } = await supabase
       .from("lodges")
       .select(
         `
-        id, name, description, address, price, capacity, available_rooms, display_status, created_at,
-        lodge_images:image_url[]
+        id, name, description, address, price, capacity, available_rooms, display_status,
+        lodge_images ( image_url )
       `
       )
-      .eq("id", Number(lodgeId))
+      .eq("id", lodgeId)
+      .eq("landlord_id", userId)
       .maybeSingle();
 
-    if (error || !lodge) {
-      return res.status(404).json({ error: "Lodge not found" });
+    if (error) {
+      console.error("Supabase error:", error);
+      return res.status(500).json({ error: "Server error" });
     }
 
-    // Format image list
+    if (!lodge) {
+      return res
+        .status(404)
+        .json({ error: "Lodge not found or not owned by you" });
+    }
+
     const images = Array.isArray(lodge.lodge_images)
-      ? lodge.lodge_images.map((img) => img.image_url || img)
+      ? lodge.lodge_images.map((img) => img.image_url)
       : [];
 
     res.status(200).json({
@@ -414,11 +423,10 @@ router.get("/:id", authMiddleware, async (req, res) => {
       },
     });
   } catch (err) {
-    console.error("Error fetching lodge:", err);
-    res.status(500).json({ error: "Server error" });
+    console.error("Unexpected error:", err);
+    res.status(500).json({ error: "Unexpected server error" });
   }
 });
-
 // UPDATE LODGE (Supabase version)
 router.put(
   "/:id",
