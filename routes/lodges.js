@@ -383,22 +383,36 @@ router.get("/verified", authMiddleware, async (req, res) => {
   }
 });
 
-// Get lodge details
+// Get lodge details with landlord and reviews
 router.get("/:id", authMiddleware, async (req, res) => {
   const lodgeId = Number(req.params.id);
-  const userId = req.user.id;
 
   try {
     const { data: lodge, error } = await supabase
       .from("lodges")
       .select(
         `
-        id, name, description, address, price, capacity, available_rooms, display_status,
-        lodge_images ( image_url )
-      `
+        id,
+        name,
+        description,
+        address,
+        price,
+        capacity,
+        available_rooms,
+        display_status,
+        lodge_images ( image_url ),
+        landlords (
+          name,
+          status,
+          profile_image
+        ),
+        reviews (
+          user_name,
+          review_text
+        )
+        `
       )
       .eq("id", lodgeId)
-      .eq("landlord_id", userId)
       .maybeSingle();
 
     if (error) {
@@ -412,14 +426,41 @@ router.get("/:id", authMiddleware, async (req, res) => {
         .json({ error: "Lodge not found or not owned by you" });
     }
 
+    // Extract and flatten data
     const images = Array.isArray(lodge.lodge_images)
       ? lodge.lodge_images.map((img) => img.image_url)
       : [];
 
+    const landlord = lodge.landlords || {
+      name: "Unknown",
+      status: "Not Available",
+      profile_image: null,
+    };
+
+    const reviews = Array.isArray(lodge.reviews)
+      ? lodge.reviews.map((r) => ({
+          user: r.user_name,
+          review: r.review_text,
+        }))
+      : [];
+
     res.status(200).json({
       lodge: {
-        ...lodge,
+        id: lodge.id,
+        name: lodge.name,
+        description: lodge.description,
+        address: lodge.address,
+        price: lodge.price,
+        capacity: lodge.capacity,
+        available_rooms: lodge.available_rooms,
+        display_status: lodge.display_status,
         images,
+        host: {
+          name: landlord.name,
+          status: landlord.status,
+          image: landlord.profile_image,
+        },
+        reviews,
       },
     });
   } catch (err) {
@@ -427,6 +468,7 @@ router.get("/:id", authMiddleware, async (req, res) => {
     res.status(500).json({ error: "Unexpected server error" });
   }
 });
+
 // UPDATE LODGE (Supabase version)
 router.put(
   "/:id",
