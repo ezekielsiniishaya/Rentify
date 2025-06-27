@@ -404,7 +404,7 @@ router.get("/:id", authMiddleware, async (req, res) => {
         landlords (
           name,
           verification_status,
-          profile_image
+          profile_picture
         ),
         lodge_reviews (
           user_name,
