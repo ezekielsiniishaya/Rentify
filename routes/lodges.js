@@ -407,9 +407,13 @@ router.get("/:id", authMiddleware, async (req, res) => {
           profile_picture
         ),
         lodge_reviews (
-          user_name,
-          review_text
-        )
+  review_text,
+  rating,
+  review_date,
+  tenants (
+    name
+  )
+)
         `
       )
       .eq("id", lodgeId)
