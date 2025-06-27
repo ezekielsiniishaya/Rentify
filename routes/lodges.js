@@ -406,7 +406,7 @@ router.get("/:id", authMiddleware, async (req, res) => {
           status,
           profile_image
         ),
-        reviews (
+        lodge_reviews (
           user_name,
           review_text
         )
