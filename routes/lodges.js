@@ -403,7 +403,7 @@ router.get("/:id", authMiddleware, async (req, res) => {
         lodge_images ( image_url ),
         landlords (
           name,
-          status,
+          verification_status,
           profile_image
         ),
         lodge_reviews (
