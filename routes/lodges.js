@@ -783,8 +783,21 @@ router.post(
       const lodgeId = req.params.lodgeId;
       const { rating, review_text } = req.body;
 
+      // Check if user is a tenant
+      const { data: tenant, error: tenantError } = await supabase
+        .from("tenants")
+        .select("id")
+        .eq("id", tenantId)
+        .maybeSingle();
+
+      if (tenantError || !tenant) {
+        return res.status(403).json({
+          error: "Only tenants can leave a review",
+        });
+      }
+
       // Check if lodge exists
-      const { data: lodge, error: lodgeError } = await superbase
+      const { data: lodge, error: lodgeError } = await supabase
         .from("lodges")
         .select("id")
         .eq("id", lodgeId)
@@ -797,7 +810,7 @@ router.post(
       }
 
       // Insert review
-      const { data: review, error: reviewError } = await superbase
+      const { data: review, error: reviewError } = await supabase
         .from("lodge_reviews")
         .insert([
           {
