@@ -437,14 +437,18 @@ router.get("/:id", authMiddleware, async (req, res) => {
 
     const landlord = lodge.landlords || {
       name: "Unknown",
-      status: "Not Available",
-      profile_image: null,
+      verification_status: "Not Available",
+      profile_picture: null,
     };
 
-    const reviews = Array.isArray(lodge.reviews)
-      ? lodge.reviews.map((r) => ({
-          user: r.user_name,
-          review: r.review_text,
+    // Fix: Use lodge.lodge_reviews and extract tenant_id, review_text, rating, review_date, and tenant name
+    const reviews = Array.isArray(lodge.lodge_reviews)
+      ? lodge.lodge_reviews.map((r) => ({
+          tenant_id: r.tenants ? r.tenants.id : null,
+          tenant_name: r.tenants ? r.tenants.name : null,
+          review_text: r.review_text,
+          rating: r.rating,
+          review_date: r.review_date,
         }))
       : [];
 
