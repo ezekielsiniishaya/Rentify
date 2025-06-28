@@ -461,8 +461,8 @@ router.get("/:id", authMiddleware, async (req, res) => {
         images,
         host: {
           name: landlord.name,
-          status: landlord.verification_status,
-          image: landlord.profile_picture,
+          verification_status: landlord.verification_status,
+          profile_picture: landlord.profile_picture,
         },
         reviews,
       },
