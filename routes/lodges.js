@@ -391,8 +391,7 @@ router.get("/:id", authMiddleware, async (req, res) => {
     const { data: lodge, error } = await supabase
       .from("lodges")
       .select(
-        `
-        id,
+        `id,
         name,
         description,
         address,
