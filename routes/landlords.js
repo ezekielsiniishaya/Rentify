@@ -336,7 +336,69 @@ router.delete("/profile-picture", authMiddleware, async (req, res) => {
     res.status(500).json({ error: "Server error" });
   }
 });
+// GET /api/landlords/:id
+router.get("/:id", authMiddleware, async (req, res) => {
+  const landlordId = req.params.id;
 
+  try {
+    const { data: landlord, error: landlordError } = await supabase
+      .from("landlords")
+      .select(
+        "id, email, phone_number, phone_number_2, account_created, address, gender, name, language_preference, profile_picture, verification_status"
+      )
+      .eq("id", landlordId)
+      .maybeSingle();
+
+    if (landlordError || !landlord) {
+      return res.status(404).json({ error: "Landlord not found" });
+    }
+
+    const { data: lodges, error: lodgesError } = await supabase
+      .from("lodges")
+      .select(
+        "id, name, description, address, price, capacity, available_rooms, verification_status, display_status, created_at"
+      )
+      .eq("landlord_id", landlordId)
+      .eq("display_status", true); // Optional: only show visible lodges
+
+    if (lodgesError) {
+      return res.status(500).json({ error: "Failed to fetch lodges" });
+    }
+
+    const lodgesWithDetails = await Promise.all(
+      (lodges || []).map(async (lodge) => {
+        const { data: images } = await supabase
+          .from("lodge_images")
+          .select("image_url")
+          .eq("lodge_id", lodge.id);
+
+        const { data: reviews } = await supabase
+          .from("lodge_reviews")
+          .select(
+            "id, rating, review_text, review_date, tenant:tenant_id(name)"
+          )
+          .eq("lodge_id", lodge.id)
+          .order("review_date", { ascending: false });
+
+        return {
+          ...lodge,
+          images: (images || []).map((img) => img.image_url),
+          reviews: reviews || [],
+        };
+      })
+    );
+
+    return res.status(200).json({
+      landlord: {
+        ...landlord,
+        lodges: lodgesWithDetails,
+      },
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
 
 // Logout to be handled on the client side
 
