@@ -464,6 +464,7 @@ router.get("/:id", authMiddleware, async (req, res) => {
         display_status: lodge.display_status,
         images,
         host: {
+          id: landlord.id,
           name: landlord.name,
           verification_status: landlord.verification_status,
           profile_picture: landlord.profile_picture,
