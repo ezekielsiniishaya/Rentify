@@ -183,24 +183,33 @@ router.get("/search", authMiddleware, async (req, res) => {
       )
       .eq("display_status", true);
 
-    if (area_id) query = query.eq("area_id", area_id);
-    if (min_price) query = query.gte("price", min_price);
-    if (max_price) query = query.lte("price", max_price);
-    if (min_rooms) query = query.gte("available_rooms", min_rooms);
-    if (max_rooms) query = query.lte("available_rooms", max_rooms);
-    if (name) query = query.ilike("name", `%${name}%`);
+    // Prioritize search by name if provided
+    if (name) {
+      query = query.ilike("name", `%${name}%`);
+    } else {
+      if (area_id) query = query.eq("area_id", area_id);
+      if (min_price) query = query.gte("price", min_price);
+      if (max_price) query = query.lte("price", max_price);
+      if (min_rooms) query = query.gte("available_rooms", min_rooms);
+      if (max_rooms) query = query.lte("available_rooms", max_rooms);
+    }
 
     const { data, error } = await query.order("created_at", {
       ascending: false,
     });
 
     if (error) {
-      console.error(error);
-      return res.status(500).json({ error: "Failed to search lodges" });
+      console.error("Supabase query error:", error);
+      return res
+        .status(500)
+        .json({ error: "An error occurred while searching." });
     }
 
-    // If you want to flatten images to an array of URLs:
-    const lodges = (data || []).map((lodge) => ({
+    if (!data || data.length === 0) {
+      return res.status(404).json({ error: "No lodges matched your search." });
+    }
+
+    const lodges = data.map((lodge) => ({
       ...lodge,
       images: Array.isArray(lodge.lodge_images)
         ? lodge.lodge_images.map((img) => img.image_url || img)
@@ -209,10 +218,11 @@ router.get("/search", authMiddleware, async (req, res) => {
 
     res.status(200).json({ lodges });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Failed to search lodges" });
+    console.error("Server error:", err);
+    res.status(500).json({ error: "Server error occurred. Please try again." });
   }
 });
+
 // GET BASIC LODGES (with minimal landlord info) - Supabase version
 router.get("/", authMiddleware, async (_, res) => {
   try {
