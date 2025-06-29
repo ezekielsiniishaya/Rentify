@@ -13,7 +13,7 @@ router.get("/areas", authMiddleware, async (req, res) => {
   try {
     const { data: areas, error } = await supabase
       .from("areas")
-      .select("name")
+      .select("id, name")
       .order("name", { ascending: true });
 
     if (error) throw error;
