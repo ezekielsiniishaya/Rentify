@@ -177,13 +177,12 @@ router.get("/search", authMiddleware, async (req, res) => {
       .from("lodges")
       .select(
         `
-        id, name, description, address, price, capacity, available_rooms, display_status, created_at,
-        lodge_images:image_url[]
+          id, name, available_rooms,
+          lodge_images(image_url)
         `
       )
       .eq("display_status", true);
 
-    // Prioritize search by name if provided
     if (name) {
       query = query.ilike("name", `%${name}%`);
     } else {
@@ -202,15 +201,19 @@ router.get("/search", authMiddleware, async (req, res) => {
       console.error("Supabase query error:", error);
       return res
         .status(500)
-        .json({ error: "An error occurred while searching." });
+        .json({ error: "An error occurred while searching lodges." });
     }
 
     if (!data || data.length === 0) {
-      return res.status(404).json({ error: "No lodges matched your search." });
+      return res
+        .status(200)
+        .json({ message: "No lodges matched your search.", lodges: [] });
     }
 
     const lodges = data.map((lodge) => ({
-      ...lodge,
+      id: lodge.id,
+      name: lodge.name,
+      available_rooms: lodge.available_rooms,
       images: Array.isArray(lodge.lodge_images)
         ? lodge.lodge_images.map((img) => img.image_url || img)
         : [],
@@ -218,7 +221,7 @@ router.get("/search", authMiddleware, async (req, res) => {
 
     res.status(200).json({ lodges });
   } catch (err) {
-    console.error("Server error:", err);
+    console.error("Server-side error:", err);
     res.status(500).json({ error: "Server error occurred. Please try again." });
   }
 });
