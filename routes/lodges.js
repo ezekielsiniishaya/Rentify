@@ -167,6 +167,31 @@ router.post(
     }
   }
 );
+// Search suggestions route
+router.get("/suggestions", async (req, res) => {
+  try {
+    const q = req.query.q;
+    if (!q) return res.status(400).json({ message: "Missing query" });
+
+    console.log("Query received:", q);
+
+    const supabaseResult = await supabase
+      .from("lodges")
+      .select("id, name")
+      .ilike("name", `%${q}%`)
+      .limit(7);
+
+    console.log("Supabase response:", supabaseResult);
+
+    if (supabaseResult.error) throw supabaseResult.error;
+
+    return res.json({ lodges: supabaseResult.data });
+  } catch (err) {
+    console.error("Server error in /suggestions route:", err);
+    return res.status(500).json({ message: err.message || "Unknown error" });
+  }
+});
+
 // Search route (Supabase version)
 router.get("/search", authMiddleware, async (req, res) => {
   try {
@@ -995,30 +1020,6 @@ router.patch("/:id/visibility", authMiddleware, async (req, res) => {
   } catch (error) {
     console.error("Update visibility error:", error.message || error);
     return res.status(500).json({ error: "Server error" });
-  }
-});
-// Search suggestions route
-router.get("/suggestions", async (req, res) => {
-  try {
-    const q = req.query.q;
-    if (!q) return res.status(400).json({ message: "Missing query" });
-
-    console.log("Query received:", q);
-
-    const supabaseResult = await supabase
-      .from("lodges")
-      .select("id, name")
-      .ilike("name", `%${q}%`)
-      .limit(7);
-
-    console.log("Supabase response:", supabaseResult);
-
-    if (supabaseResult.error) throw supabaseResult.error;
-
-    return res.json({ lodges: supabaseResult.data });
-  } catch (err) {
-    console.error("Server error in /suggestions route:", err);
-    return res.status(500).json({ message: err.message || "Unknown error" });
   }
 });
 
