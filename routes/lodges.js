@@ -997,5 +997,23 @@ router.patch("/:id/visibility", authMiddleware, async (req, res) => {
     return res.status(500).json({ error: "Server error" });
   }
 });
+// backend/routes/search.js
+router.get("/suggestions", async (req, res) => {
+  const { q } = req.query;
+
+  if (!q) return res.status(400).json({ message: "Query missing" });
+
+  try {
+    const { data, error } = await supabase
+      .from("lodges")
+      .select("id, name")
+      .ilike("name", `%${q}%`); // case-insensitive partial match
+
+    if (error) throw error;
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
 
 export default router;
