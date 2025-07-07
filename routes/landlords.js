@@ -8,6 +8,8 @@ import { deleteOldImage } from "../utils/upload.js";
 import supabase from "../config/supabase.js";
 import dotenv from "dotenv";
 dotenv.config();
+const crypto = require("crypto");
+const sendVerificationEmail = require("../utils/mail");
 
 const { sign } = pkg;
 const router = Router();
@@ -55,8 +57,9 @@ router.post(
         }
         return res.status(400).json({ error: errorMsg });
       }
-
+      // Hash the password and generate email token
       const hashedPassword = await hash(password, 10);
+      const emailToken = crypto.randomBytes(32).toString("hex");
 
       const { data, error } = await supabase
         .from("landlords")
@@ -65,6 +68,8 @@ router.post(
             email,
             phone_number,
             password: hashedPassword,
+            email_token: emailToken,
+            display_status: false,
           },
         ])
         .select("id, email");
@@ -75,8 +80,11 @@ router.post(
           .json({ error: "Database error: " + error.message });
       }
 
+      await sendVerificationEmail(email, emailToken);
+
       res.status(201).json({
-        message: "Registration successful",
+        message:
+          "Registration successful. Please check your email to verify your account.",
         landlord: data && data.length > 0 ? data[0] : null,
       });
     } catch (err) {
@@ -94,6 +102,37 @@ router.post(
     }
   }
 );
+// GET /api/landlords/verify-email?token=xyz
+router.get("/verify-email", async (req, res) => {
+  const { token } = req.query;
+
+  const { data: users, error } = await supabase
+    .from("landlords")
+    .select("*")
+    .eq("email_token", token)
+    .limit(1);
+
+  if (error || !users || users.length === 0) {
+    return res.redirect("/login.html?message=Invalid%20or%20expired%20token");
+  }
+
+  const user = users[0];
+
+  const { error: updateError } = await supabase
+    .from("landlords")
+    .update({
+      display_status: true,
+      email_token: null,
+    })
+    .eq("id", user.id);
+
+  if (updateError) {
+    return res.redirect("/login.html?message=Verification%20failed");
+  }
+
+  // Redirect with success message
+  return res.redirect("/login.html?message=Email%20successfully%20verified");
+});
 
 // POST /api/landlords/login
 router.post(
@@ -119,6 +158,11 @@ router.post(
 
       if (error || !landlord) {
         return res.status(400).json({ error: "Email does not exist" });
+      }
+      if (!user.display_status) {
+        return res
+          .status(403)
+          .json({ error: "Please verify your email first." });
       }
 
       const isMatch = await compare(password, landlord.password);
