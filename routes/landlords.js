@@ -173,7 +173,7 @@ router.post(
       if (error || !landlord) {
         return res.status(400).json({ error: "Email does not exist" });
       }
-      if (!user.display_status) {
+      if (!landlord.display_status) {
         return res
           .status(403)
           .json({ error: "Please verify your email first." });
