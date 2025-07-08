@@ -421,6 +421,29 @@ router.get("/verified", authMiddleware, async (req, res) => {
   }
 });
 
+// Get all displayed lodges by landlords (Supabase version)
+router.get("/displayed", authMiddleware, async (req, res) => {
+  try {
+    const { data: lodges, error } = await supabase.rpc(
+      "fetch_displayed_lodges"
+    );
+
+    if (error) {
+      console.error("Error fetching displayed lodges:", error);
+      return res
+        .status(500)
+        .json({ error: "Database error while fetching displayed lodges" });
+    }
+
+    res.status(200).json({ lodges: lodges || [] });
+  } catch (err) {
+    console.error("Unexpected server error:", err.message || err);
+    res.status(500).json({
+      error: "Unexpected server error while fetching displayed lodges",
+    });
+  }
+});
+
 // Get lodge details with landlord and reviews
 router.get("/:id", authMiddleware, async (req, res) => {
   const lodgeId = Number(req.params.id);
