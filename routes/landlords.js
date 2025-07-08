@@ -83,7 +83,7 @@ router.post(
       await sendVerificationEmail(email, emailToken);
 
       res.redirect(
-        `/login.html?message=${encodeURIComponent(
+        `https://rentify-frontend-production.up.railway.app/login.html?message=${encodeURIComponent(
           "Please verify your email before logging in"
         )}`
       );
@@ -144,8 +144,10 @@ router.get("/verify-email", async (req, res) => {
     );
   }
 
-  return res.redirect(
-    "https://rentify-ng.netlify.app/pages/login.html?message=Email%20successfully%20verified"
+  res.redirect(
+    `https://rentify-frontend-production.up.railway.app/login.html?message=${encodeURIComponent(
+      "Email successfully verified"
+    )}`
   );
 });
 
