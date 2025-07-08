@@ -68,7 +68,8 @@ router.post(
       await sendVerificationEmail(email, emailToken);
 
       res.status(201).json({
-        message: "Registration successful",
+        message:
+          "Registration successful. Please check your email to verify your account.",
         tenant: data,
       });
     } catch (err) {
