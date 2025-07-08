@@ -86,6 +86,7 @@ router.post(
 );
 // GET /api/landlords/verify-email
 router.get("/verify-email", async (req, res) => {
+  const { token } = req.query;
   const { data: user, error } = await supabase
     .from("tenants")
     .select("*")
