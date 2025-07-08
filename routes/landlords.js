@@ -113,7 +113,9 @@ router.get("/verify-email", async (req, res) => {
     .limit(1);
 
   if (error || !users || users.length === 0) {
-    return res.redirect("/login.html?message=Invalid%20or%20expired%20token");
+    return res.redirect(
+      "https://rentifyapp.netlify.app/login.html?message=Invalid%20or%20expired%20token"
+    );
   }
 
   const user = users[0];
@@ -127,11 +129,15 @@ router.get("/verify-email", async (req, res) => {
     .eq("id", user.id);
 
   if (updateError) {
-    return res.redirect("/login.html?message=Verification%20failed");
+    return res.redirect(
+      "https://rentifyapp.netlify.app/login.html?message=Verification%20failed"
+    );
   }
 
-  // Redirect with success message
-  return res.redirect("/login.html?message=Email%20successfully%20verified");
+  // Success
+  return res.redirect(
+    "https://rentifyapp.netlify.app/login.html?message=Email%20successfully%20verified"
+  );
 });
 
 // POST /api/landlords/login

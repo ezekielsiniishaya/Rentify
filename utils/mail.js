@@ -10,7 +10,7 @@ const transporter = nodemailer.createTransport({
 });
 
 const sendVerificationEmail = async (to, token) => {
-  const link = `https://rentifyapp.netlify.app/login.html?message=Email%20successfully%20verified&token=${token}`;
+  const link = `https://rentify-backend-production-f85a.up.railway.app/api/landlords/verify-email?token=${token}`;
 
   await transporter.sendMail({
     from: `"Rentify" <${process.env.GMAIL_USER}>`,
