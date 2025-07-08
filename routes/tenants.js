@@ -5,6 +5,8 @@ import { body, validationResult } from "express-validator";
 import pkg from "jsonwebtoken";
 import authMiddleware from "../middlewares/auth.js";
 import dotenv from "dotenv";
+import crypto from "crypto";
+import sendVerificationEmail from "../utils/mail.js";
 
 dotenv.config();
 
@@ -21,6 +23,11 @@ router.post(
       .notEmpty()
       .isMobilePhone()
       .withMessage("Valid phone number required"),
+    body("email")
+      .notEmpty()
+      .withMessage("Email is required")
+      .matches(/^[a-z]+\.[ms]?\d{7}@st\.futminna\.edu\.ng$/)
+      .withMessage("Only FUTMinna student email allowed"),
     body("password")
       .isLength({ min: 6 })
       .withMessage("Password must be at least 6 characters"),
@@ -33,7 +40,9 @@ router.post(
       }
 
       const { name, phone_number, password } = req.body;
+      // Hash the password and generate email token
       const hashedPassword = await hash(password, 10);
+      const emailToken = crypto.randomBytes(32).toString("hex");
 
       // Check for duplicate phone number
       const { data: existingTenant, error: findError } = await supabase
@@ -49,11 +58,23 @@ router.post(
       // Insert tenant
       const { data, error } = await supabase
         .from("tenants")
-        .insert([{ name, phone_number, password: hashedPassword }])
-        .select("id, name, phone_number, account_created")
+        .insert([
+          {
+            name,
+            phone_number,
+            email_token: emailToken,
+            password: hashedPassword,
+          },
+        ])
+        .select("id, name,email, phone_number, account_created")
         .single();
 
-      if (error) throw error;
+      if (error) {
+        return res
+          .status(500)
+          .json({ error: "Database error: " + error.message });
+      }
+      await sendVerificationEmail(email, emailToken);
 
       res.status(201).json({
         message: "Registration successful",
@@ -65,6 +86,50 @@ router.post(
     }
   }
 );
+// GET /api/landlords/verify-email
+router.get("/verify-email", async (req, res) => {
+  const { token } = req.query;
+
+  const { data: users, error } = await supabase
+    .from("tenants")
+    .select("*")
+    .eq("email_token", token)
+    .limit(1);
+
+  if (!users || users.length === 0) {
+    return res.redirect(
+      "https://rentify-ng.netlify.app/pages/login.html?message=Email%20already%20verified%20or%20token%20expired"
+    );
+  }
+
+  const user = users[0];
+
+  if (user.display_status === true) {
+    return res.redirect(
+      "https://rentify-ng.netlify.app/pages/login.html?message=Email%20already%20verified"
+    );
+  }
+
+  const { error: updateError } = await supabase
+    .from("tenants")
+    .update({
+      display_status: true,
+      email_token: null,
+    })
+    .eq("id", user.id);
+
+  if (updateError) {
+    return res.redirect(
+      "https://rentify-ng.netlify.app/pages/login.html?message=Verification%20failed"
+    );
+  }
+
+  return res.redirect(
+    `https://rentify-ng.netlify.app/pages/login.html?message=${encodeURIComponent(
+      "Email Successfully Verified"
+    )}`
+  );
+});
 
 // POST /api/tenants/login
 router.post(
