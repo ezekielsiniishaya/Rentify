@@ -8,8 +8,8 @@ import { deleteOldImage } from "../utils/upload.js";
 import supabase from "../config/supabase.js";
 import dotenv from "dotenv";
 dotenv.config();
-const crypto = require("crypto");
-const sendVerificationEmail = require("../utils/mail");
+import crypto from "crypto";
+import sendVerificationEmail from "../utils/mail.js";
 
 const { sign } = pkg;
 const router = Router();
