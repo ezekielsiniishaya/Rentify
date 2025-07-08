@@ -19,10 +19,6 @@ router.post(
   "/register",
   [
     body("name").notEmpty().withMessage("Name is required"),
-    body("phone_number")
-      .notEmpty()
-      .isMobilePhone()
-      .withMessage("Valid phone number required"),
     body("email")
       .notEmpty()
       .withMessage("Email is required")
@@ -39,7 +35,7 @@ router.post(
         return res.status(400).json({ errors: errors.array() });
       }
 
-      const { name, phone_number, password } = req.body;
+      const { name, email, phone_number, password } = req.body;
       // Hash the password and generate email token
       const hashedPassword = await hash(password, 10);
       const emailToken = crypto.randomBytes(32).toString("hex");
@@ -48,7 +44,7 @@ router.post(
       const { data: existingTenant, error: findError } = await supabase
         .from("tenants")
         .select("id")
-        .eq("phone_number", phone_number)
+        .eq("email", email)
         .single();
 
       if (existingTenant) {
@@ -59,14 +55,9 @@ router.post(
       const { data, error } = await supabase
         .from("tenants")
         .insert([
-          {
-            name,
-            phone_number,
-            email_token: emailToken,
-            password: hashedPassword,
-          },
+          { name, email, email_token: emailToken, password: hashedPassword },
         ])
-        .select("id, name,email, phone_number, account_created")
+        .select("id, name,email, account_created")
         .single();
 
       if (error) {
