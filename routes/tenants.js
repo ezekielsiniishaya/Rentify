@@ -55,7 +55,13 @@ router.post(
       const { data, error } = await supabase
         .from("tenants")
         .insert([
-          { name, email, email_token: emailToken, password: hashedPassword },
+          {
+            name,
+            email,
+            email_token: emailToken,
+            password: hashedPassword,
+            verification_status: false,
+          },
         ])
         .select("id, name,email, account_created")
         .single();
@@ -80,21 +86,17 @@ router.post(
 );
 // GET /api/landlords/verify-email
 router.get("/verify-email", async (req, res) => {
-  const { token } = req.query;
-
-  const { data: users, error } = await supabase
+  const { data: user, error } = await supabase
     .from("tenants")
     .select("*")
     .eq("email_token", token)
-    .limit(1);
+    .single();
 
-  if (!users || users.length === 0) {
+  if (!user) {
     return res.redirect(
       "https://rentify-ng.netlify.app/pages/login.html?message=Email%20already%20verified%20or%20token%20expired"
     );
   }
-
-  const user = users[0];
 
   if (user.verification_status === true) {
     return res.redirect(
