@@ -82,11 +82,11 @@ router.post(
 
       await sendVerificationEmail(email, emailToken);
 
-      res.redirect(
-        `https://rentify-frontend-production.up.railway.app/login.html?message=${encodeURIComponent(
+      res.status(201).json({
+        redirect: `https://rentify-frontend-production.up.railway.app/pages/login.html?message=${encodeURIComponent(
           "Please verify your email before logging in"
-        )}`
-      );
+        )}`,
+      });
     } catch (err) {
       console.error(err);
       if (err.code === "23505") {
@@ -146,7 +146,7 @@ router.get("/verify-email", async (req, res) => {
 
   res.status(201).json({
     redirect: `https://rentify-frontend-production.up.railway.app/pages/login.html?message=${encodeURIComponent(
-      "Please verify your email before logging in"
+      "Email Successfully Verified"
     )}`,
   });
 });
