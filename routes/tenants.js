@@ -103,6 +103,8 @@ router.get("/verify-email", async (req, res) => {
       "https://rentify-ng.netlify.app/pages/login.html?message=Email%20already%20verified"
     );
   }
+  console.log("Received token from query:", token);
+  console.log("Verification lookup result:", user, "Error:", error);
 
   const { error: updateError } = await supabase
     .from("tenants")
