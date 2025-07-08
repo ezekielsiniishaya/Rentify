@@ -80,7 +80,7 @@ router.post(
           .json({ error: "Database error: " + error.message });
       }
 
-      await sendVerificationEmail(email, emailToken, landlord);
+      await sendVerificationEmail(email, emailToken, "landlord");
 
       res.status(200).json({
         message:

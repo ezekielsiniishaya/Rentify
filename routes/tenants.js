@@ -71,7 +71,7 @@ router.post(
           .status(500)
           .json({ error: "Database error: " + error.message });
       }
-      await sendVerificationEmail(email, emailToken, tenant);
+      await sendVerificationEmail(email, emailToken, "tenant");
 
       res.status(201).json({
         message:
@@ -92,9 +92,6 @@ router.get("/verify-email", async (req, res) => {
     .select("*")
     .eq("email_token", token)
     .single();
-
-  console.log("Received token from query:", token);
-  console.log("Verification lookup result:", user, "Error:", error);
 
   if (!user) {
     return res.redirect(
