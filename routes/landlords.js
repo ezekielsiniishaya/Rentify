@@ -105,30 +105,26 @@ router.post(
 router.get("/verify-email", async (req, res) => {
   const { token } = req.query;
 
-  // Try to find the user by token
   const { data: users, error } = await supabase
     .from("landlords")
     .select("*")
     .eq("email_token", token)
     .limit(1);
 
-  // If not found by token, maybe already verified (email_token is null)
   if (!users || users.length === 0) {
     return res.redirect(
-      "https://rentifyapp.netlify.app/login.html?message=Email%20already%20verified%20or%20token%20expired"
+      "https://rentify-ng.netlify.app/pages/login.html?message=Email%20already%20verified%20or%20token%20expired"
     );
   }
 
   const user = users[0];
 
-  // If already verified, don't update again
   if (user.display_status === true) {
     return res.redirect(
-      "https://rentifyapp.netlify.app/login.html?message=Email%20already%20verified"
+      "https://rentify-ng.netlify.app/pages/login.html?message=Email%20already%20verified"
     );
   }
 
-  // Otherwise, mark verified and clear token
   const { error: updateError } = await supabase
     .from("landlords")
     .update({
@@ -143,11 +139,11 @@ router.get("/verify-email", async (req, res) => {
     );
   }
 
-  res.status(201).json({
-    redirect: `https://rentify-ng.netlify.app/pages/login.html?message=${encodeURIComponent(
+  return res.redirect(
+    `https://rentify-ng.netlify.app/pages/login.html?message=${encodeURIComponent(
       "Email Successfully Verified"
-    )}`,
-  });
+    )}`
+  );
 });
 
 // POST /api/landlords/login
