@@ -82,11 +82,11 @@ router.post(
 
       await sendVerificationEmail(email, emailToken);
 
-      res.status(201).json({
-        message:
-          "Registration successful. Please check your email to verify your account.",
-        landlord: data && data.length > 0 ? data[0] : null,
-      });
+      res.redirect(
+        `/login.html?message=${encodeURIComponent(
+          "Please verify your email before logging in"
+        )}`
+      );
     } catch (err) {
       console.error(err);
       if (err.code === "23505") {
@@ -102,6 +102,7 @@ router.post(
     }
   }
 );
+// GET /api/landlords/verify-email
 router.get("/verify-email", async (req, res) => {
   const { token } = req.query;
 
