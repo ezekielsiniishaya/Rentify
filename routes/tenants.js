@@ -158,6 +158,11 @@ router.post(
       if (!isMatch) {
         return res.status(400).json({ error: "Wrong password" });
       }
+      if (!tenant.verification_status) {
+        return res
+          .status(403)
+          .json({ error: "Please verify your email first." });
+      }
 
       const token = sign(
         { id: tenant.id, role: "tenant" },
