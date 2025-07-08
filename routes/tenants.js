@@ -92,6 +92,9 @@ router.get("/verify-email", async (req, res) => {
     .eq("email_token", token)
     .single();
 
+  console.log("Received token from query:", token);
+  console.log("Verification lookup result:", user, "Error:", error);
+
   if (!user) {
     return res.redirect(
       "https://rentify-ng.netlify.app/pages/login.html?message=Email%20already%20verified%20or%20token%20expired"
@@ -103,8 +106,6 @@ router.get("/verify-email", async (req, res) => {
       "https://rentify-ng.netlify.app/pages/login.html?message=Email%20already%20verified"
     );
   }
-  console.log("Received token from query:", token);
-  console.log("Verification lookup result:", user, "Error:", error);
 
   const { error: updateError } = await supabase
     .from("tenants")
