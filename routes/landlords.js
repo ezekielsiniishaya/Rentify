@@ -144,11 +144,11 @@ router.get("/verify-email", async (req, res) => {
     );
   }
 
-  res.redirect(
-    `https://rentify-frontend-production.up.railway.app/pages/login.html?message=${encodeURIComponent(
-      "Email successfully verified"
-    )}`
-  );
+  res.status(201).json({
+    redirect: `https://rentify-frontend-production.up.railway.app/login.html?message=${encodeURIComponent(
+      "Please verify your email before logging in"
+    )}`,
+  });
 });
 
 // POST /api/landlords/login
