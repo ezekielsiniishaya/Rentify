@@ -48,7 +48,7 @@ router.post(
         .single();
 
       if (existingTenant) {
-        return res.status(400).json({ error: "Phone number already exists" });
+        return res.status(400).json({ error: "Email already exists" });
       }
 
       // Insert tenant
