@@ -71,7 +71,7 @@ router.post(
           .status(500)
           .json({ error: "Database error: " + error.message });
       }
-      await sendVerificationEmail(email, emailToken);
+      await sendVerificationEmail(email, emailToken, tenant);
 
       res.status(201).json({
         message:

@@ -9,8 +9,15 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-const sendVerificationEmail = async (to, token) => {
-  const link = `https://rentify-backend-production-f85a.up.railway.app/api/landlords/verify-email?token=${token}`;
+const sendVerificationEmail = async (to, token, role) => {
+  let link = "";
+  if (role == "landldord") {
+    link = `https://rentify-backend-production-f85a.up.railway.app/api/landlords/verify-email?token=${token}`;
+  } else if (role === "tenant") {
+    link = `https://rentify-backend-production-f85a.up.railway.app/api/tenants/verify-email?token=${token}`;
+  } else {
+    throw new Error("Invalid user role for email verification.");
+  }
 
   await transporter.sendMail({
     from: `"Rentify" <${process.env.GMAIL_USER}>`,
