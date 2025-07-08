@@ -95,7 +95,7 @@ router.get("/verify-email", async (req, res) => {
 
   const user = users[0];
 
-  if (user.display_status === true) {
+  if (user.verification_status === true) {
     return res.redirect(
       "https://rentify-ng.netlify.app/pages/login.html?message=Email%20already%20verified"
     );
@@ -104,7 +104,7 @@ router.get("/verify-email", async (req, res) => {
   const { error: updateError } = await supabase
     .from("tenants")
     .update({
-      display_status: true,
+      verification_status: true,
       email_token: null,
     })
     .eq("id", user.id);
@@ -126,9 +126,11 @@ router.get("/verify-email", async (req, res) => {
 router.post(
   "/login",
   [
-    body("phone_number")
-      .isMobilePhone()
-      .withMessage("Valid phone number is required"),
+    body("email")
+      .notEmpty()
+      .withMessage("Email is required")
+      .matches(/^[a-z]+\.[ms]?\d{7}@st\.futminna\.edu\.ng$/)
+      .withMessage("Only FUTMinna student email allowed"),
     body("password").notEmpty().withMessage("Password is required"),
   ],
   async (req, res) => {
@@ -138,22 +140,22 @@ router.post(
         return res.status(400).json({ errors: errors.array() });
       }
 
-      const { phone_number, password } = req.body;
+      const { email, password } = req.body;
 
-      // Find tenant by phone_number
+      // Find tenant by email
       const { data: tenant, error } = await supabase
         .from("tenants")
         .select("*")
-        .eq("phone_number", phone_number)
+        .eq("email", email)
         .single();
 
       if (!tenant) {
-        return res.status(400).json({ error: "phone number does not exists" });
+        return res.status(400).json({ error: "Email does not exist" });
       }
 
       const isMatch = await compare(password, tenant.password);
       if (!isMatch) {
-        return res.status(400).json({ error: "wrong password" });
+        return res.status(400).json({ error: "Wrong password" });
       }
 
       const token = sign(
@@ -168,7 +170,7 @@ router.post(
         tenant: {
           id: tenant.id,
           name: tenant.name,
-          phone_number: tenant.phone_number,
+          email: tenant.email,
         },
       });
     } catch (err) {
@@ -186,7 +188,7 @@ router.get("/profile", authMiddleware, async (req, res) => {
     // Fetch tenant profile
     const { data: tenantProfile, error: profileError } = await supabase
       .from("tenants")
-      .select("id, name, phone_number")
+      .select("id, name, email")
       .eq("id", tenantId)
       .single();
 
