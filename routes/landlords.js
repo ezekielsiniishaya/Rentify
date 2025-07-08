@@ -82,10 +82,8 @@ router.post(
 
       await sendVerificationEmail(email, emailToken);
 
-      res.status(201).json({
-        redirect: `https://rentify-ng.netlify.app/pages/login.html?message=${encodeURIComponent(
-          "Please verify your email before logging in"
-        )}`,
+      res.status(200).json({
+        message: "Email Successfully Verified",
       });
     } catch (err) {
       console.error(err);
