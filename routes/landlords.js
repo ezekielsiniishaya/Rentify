@@ -139,12 +139,12 @@ router.get("/verify-email", async (req, res) => {
 
   if (updateError) {
     return res.redirect(
-      "https://rentifyapp.netlify.app/pages/login.html?message=Verification%20failed"
+      "https://rentify-ng.netlify.app/pages/login.html?message=Verification%20failed"
     );
   }
 
   return res.redirect(
-    "https://rentifyapp.netlify.app/pages/login.html?message=Email%20successfully%20verified"
+    "https://rentify-ng.netlify.app/pages/login.html?message=Email%20successfully%20verified"
   );
 });
 
