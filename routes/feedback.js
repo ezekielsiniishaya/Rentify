@@ -11,7 +11,7 @@ router.post(
   [
     body("message").notEmpty().withMessage("Feedback message is required."),
     body("type")
-      .isIn(["bug", "suggestion", "general"])
+      .isIn(["bug", "suggestion", "complain"])
       .withMessage("Type must be bug, suggestion, or general."),
     body("role")
       .optional()
