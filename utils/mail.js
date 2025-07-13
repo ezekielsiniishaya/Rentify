@@ -11,7 +11,7 @@ const transporter = nodemailer.createTransport({
 
 const sendVerificationEmail = async (to, token, role) => {
   let link = "";
-  if (role == "landldord") {
+  if (role === "landldord") {
     link = `https://rentify-backend-production-f85a.up.railway.app/api/landlords/verify-email?token=${token}`;
   } else if (role === "tenant") {
     link = `https://rentify-backend-production-f85a.up.railway.app/api/tenants/verify-email?token=${token}`;
