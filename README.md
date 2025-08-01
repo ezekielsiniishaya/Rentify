@@ -1,4 +1,4 @@
-# 🏠 Lodge Booking Web Application
+# 🏠 Lodge Booking Web Application 
 
 A full-stack web platform designed to streamline the lodge search, discovery, and management process for students and landlords. Built by a dedicated team of Mechatronics Engineering students, this project addresses real-world housing challenges around student campuses with an intuitive interface, efficient backend, and scalable architecture.
 
