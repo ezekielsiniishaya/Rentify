@@ -726,5 +726,89 @@ router.put(
     }
   }
 );
+// GET all users (tenants + landlords combined, paginated)
+router.get("/users", authMiddleware, adminMiddleware, async (req, res) => {
+  const page = parseInt(req.query.page) || 1;
+  const limit = parseInt(req.query.limit) || 10;
+  const filterType = req.query.type; // Optional filter for frontend: 'tenant', 'landlord', or undefined for all
 
+  try {
+    // Always fetch both tenants and landlords
+    const [tenantsResult, landlordsResult] = await Promise.all([
+      supabase
+        .from("tenants")
+        .select("id, name, email, account_created", { count: "exact" })
+        .order("account_created", { ascending: false }),
+      supabase
+        .from("landlords")
+        .select(
+          "id, name, email, phone_number, phone_number_2, verification_status, account_created",
+          { count: "exact" }
+        )
+        .order("account_created", { ascending: false }),
+    ]);
+
+    if (tenantsResult.error) throw tenantsResult.error;
+    if (landlordsResult.error) throw landlordsResult.error;
+
+    // Map tenants with consistent structure
+    const mappedTenants = (tenantsResult.data || []).map((tenant) => ({
+      ...tenant,
+      user_type: "tenant",
+      email: null, // Tenants don't have email in your schema
+      phone_number_2: null,
+      verification_status: null,
+    }));
+
+    // Map landlords with user_type
+    const mappedLandlords = (landlordsResult.data || []).map((landlord) => ({
+      ...landlord,
+      user_type: "landlord",
+    }));
+
+    // Combine all users
+    const allUsers = [...mappedTenants, ...mappedLandlords];
+
+    // Sort all users by account_created date (most recent first)
+    allUsers.sort(
+      (a, b) => new Date(b.account_created) - new Date(a.account_created)
+    );
+
+    // Apply filtering if specified
+    let filteredUsers = allUsers;
+    if (filterType === "tenant") {
+      filteredUsers = allUsers.filter((user) => user.user_type === "tenant");
+    } else if (filterType === "landlord") {
+      filteredUsers = allUsers.filter((user) => user.user_type === "landlord");
+    }
+
+    // Apply pagination to filtered results
+    const totalFiltered = filteredUsers.length;
+    const startIndex = (page - 1) * limit;
+    const endIndex = startIndex + limit;
+    const paginatedUsers = filteredUsers.slice(startIndex, endIndex);
+
+    // Count statistics
+    const tenantCount = tenantsResult.count || 0;
+    const landlordCount = landlordsResult.count || 0;
+    const totalUsers = tenantCount + landlordCount;
+
+    res.json({
+      page,
+      limit,
+      total: totalFiltered,
+      users: paginatedUsers,
+      all_users: allUsers, // Complete list for frontend filtering
+      summary: {
+        total_users: totalUsers,
+        tenants: tenantCount,
+        landlords: landlordCount,
+        showing: filterType || "all",
+      },
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch users" });
+  }
+});
 export default router;
