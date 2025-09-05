@@ -205,6 +205,7 @@ router.post(
   }
 );
 // POST /api/landlords/forgot-password
+// POST /api/landlords/forgot-password
 router.post(
   "/forgot-password",
   [body("email").isEmail().withMessage("Valid email is required")],
@@ -216,55 +217,26 @@ router.post(
       }
 
       const { email } = req.body;
-      const { data: landlord, error } = await supabase
-        .from("landlords")
-        .select("id, email, name")
-        .eq("email", email)
-        .maybeSingle();
 
-      if (error || !landlord) {
-        return res.status(200).json({
-          message: "If the email exists, a password reset link has been sent.",
-        });
-      }
+      // 🔑 Generate token (same style as register)
       const emailToken = crypto.randomBytes(32).toString("hex");
-      const resetTokenExpiry = new Date(Date.now() + 60 * 60 * 1000);
 
-      try {
-        // Send email FIRST
-        await sendVerificationEmail(email, emailToken, "landlord");
-
-        // Then update database
-        const { error: updateError } = await supabase
-          .from("landlords")
-          .update({
-            reset_token: resetToken,
-            reset_token_expiry: resetTokenExpiry.toISOString(),
-          })
-          .eq("id", landlord.id);
-
-        if (updateError) {
-          console.error("Failed to save reset token:", updateError);
-          // Email already sent, so still return success
-        }
-      } catch (emailError) {
-        console.error("Email sending failed:", emailError);
-        return res.status(500).json({
-          error: "Failed to send reset email. Please try again.",
-        });
-      }
+      // 🚀 Send email only (no DB ops)
+      await sendVerificationEmail(email, emailToken, "landlord");
 
       res.status(200).json({
-        message: "If the email exists, a password reset link has been sent.",
+        message:
+          "If the email exists, a reset link has been sent. Please check your inbox.",
       });
     } catch (err) {
       console.error("Forgot password error:", err);
-      res
-        .status(500)
-        .json({ error: "Failed to process password reset request" });
+      res.status(500).json({
+        error: "Failed to send password reset email: " + err.message,
+      });
     }
   }
 );
+
 // POST /api/landlords/reset-password
 router.post(
   "/reset-password",
