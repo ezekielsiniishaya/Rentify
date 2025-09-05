@@ -48,43 +48,32 @@ const sendVerificationEmail = async (to, token, role) => {
 const sendPasswordResetEmail = async (to, token, name) => {
   const resetLink = `https://rentify-ng.netlify.app/pages/reset-password.html?token=${token}`;
 
-  await transporter.sendMail({
-    from: `"Rentify" <${process.env.GMAIL_USER}>`,
-    to,
-    subject: "Password Reset Request - Rentify",
-    html: `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-        <h2 style="color: #EC704A;">Password Reset Request</h2>
-        <p>Hi ${name},</p>
-        <p>You have requested to reset your password for your Rentify account.</p>
-        <p>Please click the button below to reset your password:</p>
-        <div style="text-align: center; margin: 30px 0;">
+  try {
+    await transporter.sendMail({
+      from: `"Rentify" <${process.env.GMAIL_USER}>`,
+      to,
+      subject: "Reset Your Rentify Password",
+      html: `
+        <p>Hi ${name || "there"},</p>
+        <p>You requested to reset your password for your Rentify account.</p>
+        <p>
           <a href="${resetLink}" 
              target="_blank" 
-             style="background-color: #EC704A; 
-                    color: white; 
-                    padding: 12px 24px; 
-                    text-decoration: none; 
-                    border-radius: 5px; 
-                    display: inline-block;">
+             style="background:#EC704A; color:#fff; padding:10px 18px; 
+                    text-decoration:none; border-radius:4px;">
             Reset Password
           </a>
-        </div>
-        <p><strong>This link will expire in 2 hours.</strong></p>
-        <p>If you did not request this password reset, please ignore this email. Your password will remain unchanged.</p>
-        <p>For security reasons, please do not share this link with anyone.</p>
-        <hr style="margin: 30px 0; border: none; border-top: 1px solid #eee;">
-        <p style="color: #666; font-size: 12px;">
-          If the button above doesn't work, copy and paste this link into your browser:<br>
-          <a href="${resetLink}" style="color: #EC704A;">${resetLink}</a>
         </p>
-        <p style="color: #666; font-size: 12px;">
-          Best regards,<br>
-          The Rentify Team
-        </p>
-      </div>
-    `,
-  });
+        <p>If the button doesn’t work, copy and paste this link into your browser:</p>
+        <p><a href="${resetLink}" target="_blank">${resetLink}</a></p>
+        <p>This link will expire in <strong>2 hours</strong>.</p>
+        <p>If you did not request this reset, please ignore this email.</p>
+        <p>— The Rentify Team</p>
+      `,
+    });
+    console.log(`Password reset email sent to ${to}`);
+  } catch (err) {
+    console.error("Password reset email error:", err);
+    throw err;
+  }
 };
-
-export { sendVerificationEmail as default, sendPasswordResetEmail };
