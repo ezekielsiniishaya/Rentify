@@ -77,3 +77,5 @@ const sendPasswordResetEmail = async (to, token, name) => {
     throw err;
   }
 };
+
+export { sendVerificationEmail as default, sendPasswordResetEmail };
