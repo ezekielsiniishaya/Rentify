@@ -227,13 +227,12 @@ router.post(
           message: "If the email exists, a password reset link has been sent.",
         });
       }
-
-      const resetToken = crypto.randomBytes(32).toString("hex");
+      const emailToken = crypto.randomBytes(32).toString("hex");
       const resetTokenExpiry = new Date(Date.now() + 60 * 60 * 1000);
 
       try {
         // Send email FIRST
-        await sendPasswordResetEmail(landlord.email, resetToken, landlord.name);
+        await sendVerificationEmail(email, emailToken, "landlord");
 
         // Then update database
         const { error: updateError } = await supabase
