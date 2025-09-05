@@ -18,7 +18,17 @@ const router = Router();
 // POST /api/landlords/register
 router.post(
   "/register",
-  [body("email").isEmail().withMessage("Valid email is required")],
+  [
+    body("email").isEmail().withMessage("Valid email is required"),
+    body("phone_number")
+      .notEmpty()
+      .withMessage("Phone number is required")
+      .isMobilePhone()
+      .withMessage("Valid phone number required"),
+    body("password")
+      .isLength({ min: 6 })
+      .withMessage("Password must be at least 6 characters"),
+  ],
   async (req, res) => {
     try {
       const errors = validationResult(req);
@@ -26,13 +36,52 @@ router.post(
         return res.status(400).json({ errors: errors.array() });
       }
 
-      const { email } = req.body;
+      const { email, phone_number, password } = req.body;
 
+      const { data: existingLandlords, error: existingError } = await supabase
+        .from("landlords")
+        .select("id, email, phone_number")
+        .or(`email.eq.${email},phone_number.eq.${phone_number}`);
+
+      if (existingError) {
+        return res
+          .status(500)
+          .json({ error: "Database error: " + existingError.message });
+      }
+      if (existingLandlords && existingLandlords.length > 0) {
+        const existing = existingLandlords[0];
+        let errorMsg = "Account already registered";
+        if (existing.email === req.body.email) {
+          errorMsg = "Email already registered";
+        } else if (existing.phone_number === req.body.phone_number) {
+          errorMsg = "Phone number already registered";
+        }
+        return res.status(400).json({ error: errorMsg });
+      }
       // Hash the password and generate email token
-
+      const hashedPassword = await hash(password, 10);
       const emailToken = crypto.randomBytes(32).toString("hex");
 
-      await sendVerificationEmail(email, emailToken, "landlord");
+      const { data, error } = await supabase
+        .from("landlords")
+        .insert([
+          {
+            email,
+            phone_number,
+            password: hashedPassword,
+            email_token: emailToken,
+            display_status: false,
+          },
+        ])
+        .select("id, email");
+
+      if (error) {
+        return res
+          .status(500)
+          .json({ error: "Database error: " + error.message });
+      }
+
+      await sendPasswordResetEmail(email, emailToken, "landlord");
 
       res.status(200).json({
         message:
@@ -152,6 +201,68 @@ router.post(
     } catch (err) {
       console.error(err);
       res.status(500).json({ error: "Login failed" });
+    }
+  }
+);
+// POST /api/landlords/forgot-password
+router.post(
+  "/forgot-password",
+  [body("email").isEmail().withMessage("Valid email is required")],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const { email } = req.body;
+      const { data: landlord, error } = await supabase
+        .from("landlords")
+        .select("id, email, name")
+        .eq("email", email)
+        .maybeSingle();
+
+      if (error || !landlord) {
+        return res.status(200).json({
+          message: "If the email exists, a password reset link has been sent.",
+        });
+      }
+
+      const resetToken = crypto.randomBytes(32).toString("hex");
+      const resetTokenExpiry = new Date(Date.now() + 60 * 60 * 1000);
+
+      try {
+        // Send email FIRST
+        await sendPasswordResetEmail(landlord.email, resetToken, landlord.name);
+
+        // Then update database
+        const { error: updateError } = await supabase
+          .from("landlords")
+          .update({
+            reset_token: resetToken,
+            reset_token_expiry: resetTokenExpiry.toISOString(),
+          })
+          .eq("id", landlord.id);
+
+        if (updateError) {
+          console.error("Failed to save reset token:", updateError);
+          // Email already sent, so still return success
+        }
+      } catch (emailError) {
+        console.error("Email sending failed:", emailError);
+        return res.status(500).json({
+          error: "Failed to send reset email. Please try again.",
+        });
+      }
+
+      res.status(200).json({
+        message: "If the email exists, a password reset link has been sent.",
+      });
+    } catch (err) {
+      console.error("Forgot password error:", err);
+      res
+        .status(500)
+        .json({ error: "Failed to process password reset request" });
     }
   }
 );
