@@ -14,8 +14,10 @@ import sendPasswordResetEmail from "../utils/resetPass.js";
 
 const { sign } = pkg;
 const router = Router();
+
+// POST /api/landlords/register
 router.post(
-  "/forgot-password",
+  "/register",
   [body("email").isEmail().withMessage("Valid email is required")],
   async (req, res) => {
     try {
@@ -26,89 +28,9 @@ router.post(
 
       const { email } = req.body;
 
-      // Generate email token (same as register)
-      const emailToken = crypto.randomBytes(32).toString("hex");
-
-      // Call the same function used in register
-      await sendVerificationEmail(email, emailToken, "landlord");
-
-      res.status(200).json({
-        message: "Test email sent successfully. Please check your inbox.",
-      });
-    } catch (err) {
-      console.error("Test email error:", err);
-      res
-        .status(500)
-        .json({ error: "Failed to send test email: " + err.message });
-    }
-  }
-);
-
-// POST /api/landlords/register
-router.post(
-  "/register",
-  [
-    body("email").isEmail().withMessage("Valid email is required"),
-    body("phone_number")
-      .notEmpty()
-      .withMessage("Phone number is required")
-      .isMobilePhone()
-      .withMessage("Valid phone number required"),
-    body("password")
-      .isLength({ min: 6 })
-      .withMessage("Password must be at least 6 characters"),
-  ],
-  async (req, res) => {
-    try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
-      }
-
-      const { email, phone_number, password } = req.body;
-
-      const { data: existingLandlords, error: existingError } = await supabase
-        .from("landlords")
-        .select("id, email, phone_number")
-        .or(`email.eq.${email},phone_number.eq.${phone_number}`);
-
-      if (existingError) {
-        return res
-          .status(500)
-          .json({ error: "Database error: " + existingError.message });
-      }
-      if (existingLandlords && existingLandlords.length > 0) {
-        const existing = existingLandlords[0];
-        let errorMsg = "Account already registered";
-        if (existing.email === req.body.email) {
-          errorMsg = "Email already registered";
-        } else if (existing.phone_number === req.body.phone_number) {
-          errorMsg = "Phone number already registered";
-        }
-        return res.status(400).json({ error: errorMsg });
-      }
       // Hash the password and generate email token
-      const hashedPassword = await hash(password, 10);
+
       const emailToken = crypto.randomBytes(32).toString("hex");
-
-      const { data, error } = await supabase
-        .from("landlords")
-        .insert([
-          {
-            email,
-            phone_number,
-            password: hashedPassword,
-            email_token: emailToken,
-            display_status: false,
-          },
-        ])
-        .select("id, email");
-
-      if (error) {
-        return res
-          .status(500)
-          .json({ error: "Database error: " + error.message });
-      }
 
       await sendVerificationEmail(email, emailToken, "landlord");
 
