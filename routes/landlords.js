@@ -14,11 +14,6 @@ import sendPasswordResetEmail from "../utils/resetPass.js";
 
 const { sign } = pkg;
 const router = Router();
-// POST /api/landlords/forgot-password
-import crypto from "crypto";
-import { body, validationResult } from "express-validator";
-import sendVerificationEmail from "../utils/emailService.js";
-
 router.post(
   "/forgot-password",
   [body("email").isEmail().withMessage("Valid email is required")],
