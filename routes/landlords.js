@@ -217,44 +217,44 @@ router.post(
       }
 
       const { email } = req.body;
-      // Check if landlord exists
       const { data: landlord, error } = await supabase
         .from("landlords")
         .select("id, email, name")
         .eq("email", email)
         .maybeSingle();
 
-      if (error) {
-        return res.status(500).json({ error: "Database error" });
-      }
-
-      // Always return success to prevent email enumeration
-      if (!landlord) {
+      if (error || !landlord) {
         return res.status(200).json({
           message: "If the email exists, a password reset link has been sent.",
         });
       }
 
-      // Generate reset token
       const resetToken = crypto.randomBytes(32).toString("hex");
-      const resetTokenExpiry = new Date(Date.now() + 60 * 60 * 1000); // 1 hour from now
+      const resetTokenExpiry = new Date(Date.now() + 60 * 60 * 1000);
 
-      // Store reset token in database
-      const { error: updateError } = await supabase
-        .from("landlords")
-        .update({
-          reset_token: resetToken,
-          reset_token_expiry: resetTokenExpiry.toISOString(),
-        })
-        .eq("id", landlord.id);
+      try {
+        // Send email FIRST
+        await sendPasswordResetEmail(landlord.email, resetToken, landlord.name);
 
-      if (updateError) {
-        return res
-          .status(500)
-          .json({ error: "Failed to generate reset token" });
+        // Then update database
+        const { error: updateError } = await supabase
+          .from("landlords")
+          .update({
+            reset_token: resetToken,
+            reset_token_expiry: resetTokenExpiry.toISOString(),
+          })
+          .eq("id", landlord.id);
+
+        if (updateError) {
+          console.error("Failed to save reset token:", updateError);
+          // Email already sent, so still return success
+        }
+      } catch (emailError) {
+        console.error("Email sending failed:", emailError);
+        return res.status(500).json({
+          error: "Failed to send reset email. Please try again.",
+        });
       }
-
-      await sendPasswordResetEmail(landlord.email, resetToken, landlord.name);
 
       res.status(200).json({
         message: "If the email exists, a password reset link has been sent.",
@@ -267,7 +267,6 @@ router.post(
     }
   }
 );
-
 // POST /api/landlords/reset-password
 router.post(
   "/reset-password",

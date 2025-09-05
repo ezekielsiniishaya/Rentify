@@ -6,8 +6,8 @@ dotenv.config();
 // Create Nodemailer transporter with Gmail
 const transporter = nodemailer.createTransport({
   host: "smtp.gmail.com",
-  port: 465,            // SMTPS
-  secure: true,         // SSL/TLS from the start
+  port: 465, // SMTPS
+  secure: true, // SSL/TLS from the start
   auth: {
     user: process.env.GMAIL_USER,
     pass: process.env.GMAIL_PASS, // Google App Password (not your normal password)
@@ -46,7 +46,7 @@ const sendVerificationEmail = async (to, token, role) => {
 
 // Send password reset email
 const sendPasswordResetEmail = async (to, token, name) => {
-  const resetLink = `https://rentify-ng.netlify.app/pages/reset-password.html?token=${token}`;
+  const resetLink = `https://rentify-ng.netlify.app/pages/reset-password?token=${token}`;
 
   await transporter.sendMail({
     from: `"Rentify" <${process.env.GMAIL_USER}>`,
