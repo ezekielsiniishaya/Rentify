@@ -48,34 +48,19 @@ const sendVerificationEmail = async (to, token, role) => {
 const sendPasswordResetEmail = async (to, token, name) => {
   const resetLink = `https://rentify-ng.netlify.app/pages/reset-password.html?token=${token}`;
 
-  try {
-    await transporter.sendMail({
-      from: `"Rentify" <${process.env.GMAIL_USER}>`,
-      to,
-      subject: "Reset Your Rentify Password",
-      html: `
-        <p>Hi ${name || "there"},</p>
-        <p>You requested to reset your password for your Rentify account.</p>
-        <p>
-          <a href="${resetLink}" 
-             target="_blank" 
-             style="background:#EC704A; color:#fff; padding:10px 18px; 
-                    text-decoration:none; border-radius:4px;">
-            Reset Password
-          </a>
-        </p>
-        <p>If the button doesn’t work, copy and paste this link into your browser:</p>
-        <p><a href="${resetLink}" target="_blank">${resetLink}</a></p>
-        <p>This link will expire in <strong>2 hours</strong>.</p>
-        <p>If you did not request this reset, please ignore this email.</p>
-        <p>— The Rentify Team</p>
-      `,
-    });
-    console.log(`Password reset email sent to ${to}`);
-  } catch (err) {
-    console.error("Password reset email error:", err);
-    throw err;
-  }
+  await transporter.sendMail({
+    from: `"Rentify" <${process.env.GMAIL_USER}>`,
+    to,
+    subject: "Reset Your Rentify Password",
+    html: `
+      <p>Hi ${name || "there"},</p>
+      <p>You requested to reset your password for your Rentify account.</p>
+      <p>Please reset your password by clicking the link below:</p>
+      <a href="${resetLink}" target="_blank" style="color:#EC704A;">Reset Password</a>
+      <p>This link will expire in 1 hour.</p>
+      <p>If you did not request this reset, please ignore this email.</p>
+    `,
+  });
 };
 
 export { sendVerificationEmail as default, sendPasswordResetEmail };
