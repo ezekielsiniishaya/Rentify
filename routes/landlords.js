@@ -15,6 +15,10 @@ import sendPasswordResetEmail from "../utils/resetPass.js";
 const { sign } = pkg;
 const router = Router();
 // POST /api/landlords/forgot-password
+import crypto from "crypto";
+import { body, validationResult } from "express-validator";
+import sendVerificationEmail from "../utils/emailService.js";
+
 router.post(
   "/forgot-password",
   [body("email").isEmail().withMessage("Valid email is required")],
@@ -27,24 +31,24 @@ router.post(
 
       const { email } = req.body;
 
-      // 🔑 Generate token (same style as register)
+      // Generate email token (same as register)
       const emailToken = crypto.randomBytes(32).toString("hex");
-      console.log("About to send verify email");
-      // 🚀 Send email only (no DB ops)
+
+      // Call the same function used in register
       await sendVerificationEmail(email, emailToken, "landlord");
 
       res.status(200).json({
-        message:
-          "If the email exists, a reset link has been sent. Please check your inbox.",
+        message: "Test email sent successfully. Please check your inbox.",
       });
     } catch (err) {
-      console.error("Forgot password error:", err);
-      res.status(500).json({
-        error: "Failed to send password reset email: " + err.message,
-      });
+      console.error("Test email error:", err);
+      res
+        .status(500)
+        .json({ error: "Failed to send test email: " + err.message });
     }
   }
 );
+
 // POST /api/landlords/register
 router.post(
   "/register",
