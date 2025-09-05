@@ -1,4 +1,3 @@
-// utils/emailService.js
 import nodemailer from "nodemailer";
 import dotenv from "dotenv";
 dotenv.config();
@@ -6,11 +5,11 @@ dotenv.config();
 // Create Nodemailer transporter with Gmail
 const transporter = nodemailer.createTransport({
   host: "smtp.gmail.com",
-  port: 465, // SMTPS
-  secure: true, // SSL/TLS from the start
+  port: 465,
+  secure: true,
   auth: {
     user: process.env.GMAIL_USER,
-    pass: process.env.GMAIL_PASS, // Google App Password (not your normal password)
+    pass: process.env.GMAIL_PASS,
   },
   pool: true,
   maxConnections: 2,
@@ -19,7 +18,7 @@ const transporter = nodemailer.createTransport({
   socketTimeout: 10000,
 });
 
-//  Send verification email
+// Send verification email
 const sendVerificationEmail = async (to, token, role) => {
   let link = "";
   if (role === "landlord") {
@@ -44,23 +43,4 @@ const sendVerificationEmail = async (to, token, role) => {
   });
 };
 
-// Send password reset email
-const sendPasswordResetEmail = async (to, token, name) => {
-  const resetLink = `https://rentify-ng.netlify.app/pages/reset-password?token=${token}`;
-
-  await transporter.sendMail({
-    from: `"Rentify" <${process.env.GMAIL_USER}>`,
-    to,
-    subject: "Reset Your Rentify Password",
-    html: `
-      <p>Hi ${name || "there"},</p>
-      <p>You requested to reset your password for your Rentify account.</p>
-      <p>Please reset your password by clicking the link below:</p>
-      <a href="${resetLink}" target="_blank" style="color:#EC704A;">Reset Password</a>
-      <p>This link will expire in 1 hour.</p>
-      <p>If you did not request this reset, please ignore this email.</p>
-    `,
-  });
-};
-
-export { sendVerificationEmail as default, sendPasswordResetEmail };
+export default sendVerificationEmail;

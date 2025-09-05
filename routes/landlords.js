@@ -9,9 +9,8 @@ import supabase from "../config/supabase.js";
 import dotenv from "dotenv";
 dotenv.config();
 import crypto from "crypto";
-import sendVerificationEmail, {
-  sendPasswordResetEmail,
-} from "../utils/mail.js";
+import sendVerificationEmail from "../utils/verifyMail.js";
+import sendPasswordResetEmail from "../utils/resetPass.js";
 
 const { sign } = pkg;
 const router = Router();

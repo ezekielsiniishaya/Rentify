@@ -6,10 +6,8 @@ import pkg from "jsonwebtoken";
 import authMiddleware from "../middlewares/auth.js";
 import dotenv from "dotenv";
 import crypto from "crypto";
-import sendVerificationEmail, {
-  sendPasswordResetEmail,
-} from "../utils/mail.js";
-
+import sendVerificationEmail from "../utils/verifyMail.js";
+import sendPasswordResetEmail from "../utils/resetPass.js";
 dotenv.config();
 
 const { sign, verify } = pkg;
