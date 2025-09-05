@@ -6,12 +6,17 @@ dotenv.config();
 // Create Nodemailer transporter with Gmail
 const transporter = nodemailer.createTransport({
   host: "smtp.gmail.com",
-  port: 587,
-  secure: false, // upgrade later with STARTTLS
+  port: 465,            // SMTPS
+  secure: true,         // SSL/TLS from the start
   auth: {
     user: process.env.GMAIL_USER,
-    pass: process.env.GMAIL_PASS,
+    pass: process.env.GMAIL_PASS, // Google App Password (not your normal password)
   },
+  pool: true,
+  maxConnections: 2,
+  connectionTimeout: 10000,
+  greetingTimeout: 5000,
+  socketTimeout: 10000,
 });
 
 //  Send verification email
